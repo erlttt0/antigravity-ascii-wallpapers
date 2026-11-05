@@ -16,7 +16,7 @@ Live, animated backgrounds for the [Antigravity](https://antigravity.google) des
 - **Controls**: Pause freezes the animation, Adjust sets intensity, glyph style (**ASCII**, **Braille**, **Blocks**, **Katakana**) and grid density (**Fine**, **Normal**, **Chunky**), and Off restores the stock look instantly.
 - **Reacts to your agents**: the scene speeds up and brightens while agents are running, with scene-specific touches (Catnap's ear twitches and tail swishes, Digital Rain adds streams, Aurora flares, Koi and Fireflies liven up). When an agent finishes, a ripple spreads out from the composer. If the window was hidden at the time, the ripple plays when you come back. Turn it off under **Adjust → React to agents**.
 - **Stays out of the way**: the background sits behind your text and the composer stays fully interactive. Rendering pauses while the window is hidden, and reduced-motion settings are respected.
-- **Private**: no network requests. Your pick is saved locally in `%APPDATA%\Antigravity\ascii-wallpapers-preferences.json` on Windows or `~/Library/Application Support/Antigravity/ascii-wallpapers-preferences.json` on macOS.
+- **Private**: no network requests. Your pick is saved locally in `%APPDATA%\Antigravity\ascii-wallpapers-preferences.json` on Windows, `~/Library/Application Support/Antigravity/ascii-wallpapers-preferences.json` on macOS, or `~/.config/Antigravity/ascii-wallpapers-preferences.json` on Linux.
 
 | | | |
 |---|---|---|
@@ -25,7 +25,7 @@ Live, animated backgrounds for the [Antigravity](https://antigravity.google) des
 
 ## Requirements
 
-- Windows, with the standalone Antigravity app installed in the default location (`%LOCALAPPDATA%\Programs\antigravity`). macOS support is experimental and has not been validated on a Mac; the installer refuses to patch when it cannot verify the Electron integrity fuse.
+- Linux, Windows, or macOS, with the standalone Antigravity app installed. On Windows, default location is `%LOCALAPPDATA%\Programs\antigravity`. On Linux, common paths in `/opt`, `/usr/lib`, and `~/.local/share` are detected automatically. macOS support is experimental and has not been validated on a Mac; the installer refuses to patch when it cannot verify the Electron integrity fuse.
 - [Node.js](https://nodejs.org) 18 or newer.
 
 Version **2.28.2** was inspected by hand. Other versions are checked automatically before anything is changed (see [Safety checks](#safety-checks)), and the installer refuses any build that fails them.
@@ -34,7 +34,13 @@ Version **2.28.2** was inspected by hand. Other versions are checked automatical
 
 1. Download this repository (**Code → Download ZIP**) and extract it.
 2. Close Antigravity completely.
-3. Open Terminal (macOS) or PowerShell (Windows) in the extracted folder and run:
+3. Open Terminal (Linux or macOS) or PowerShell (Windows) in the extracted folder and run:
+
+   **Linux:**
+   ```bash
+   node manage-wallpapers.cjs install
+   ```
+   *(If installed in `/opt` or system directories requiring root privileges, use `sudo node manage-wallpapers.cjs install`)*
 
    **macOS:**
    ```bash
@@ -70,17 +76,29 @@ The installer detects the new build, runs the safety checks, and keeps the old b
 
 Close Antigravity, then run:
 
+**Linux:**
+```bash
+node manage-wallpapers.cjs restore
+# or
+node manage-wallpapers.cjs uninstall
+```
+*(If installed in `/opt` or system directories requiring root privileges, prefix with `sudo`)*
+
 **macOS:**
 ```bash
 node manage-wallpapers.cjs restore
+# or
+node manage-wallpapers.cjs uninstall
 ```
 
 **Windows:**
 ```powershell
 node .\manage-wallpapers.cjs restore
+# or
+node .\manage-wallpapers.cjs uninstall
 ```
 
-The original archive is kept next to the app as `app.asar.ascii-wallpapers.backup`. Restore checks hashes first and refuses to overwrite a newer app version.
+`uninstall` is supported as an alias for `restore`. The original archive is kept next to the app as `app.asar.ascii-wallpapers.backup`. Restore checks hashes first and refuses to overwrite a newer app version.
 
 ## Safety checks
 
@@ -89,7 +107,7 @@ Before patching a build that wasn't inspected by hand, the installer requires al
 - `package.json` names the app as Antigravity, with `dist/main.js` as its entry point.
 - `dist/preload.js` and `dist/main.js` are packed in the archive and don't already contain the mod.
 - The patched `dist/preload.js` and `dist/main.js` compile. This catches syntax or name clashes with the new app code.
-- Electron's `EnableEmbeddedAsarIntegrityValidation` fuse is off. On macOS an unreadable fuse blocks installation; on Windows it produces a warning. If the fuse is on, an edited archive would stop the app from launching.
+- Electron's `EnableEmbeddedAsarIntegrityValidation` fuse is off. On macOS an unreadable fuse blocks installation; on Linux and Windows it produces a warning. If the fuse is on, an edited archive would stop the app from launching.
 
 It also prints a note if an optional hook is missing. In that case only that feature stops working: saved preferences, title bar colors, or agent reactivity.
 

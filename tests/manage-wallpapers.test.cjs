@@ -102,6 +102,31 @@ try {
   // Test EBUSY across platforms -> in use message
   fs.writeFileSync = () => { const err = new Error('resource busy'); err.code = 'EBUSY'; throw err; };
   assert.throws(() => installer.replace(Buffer.from('')), /The app archive is in use\. Close Antigravity completely/);
+
+  // Test backup and old backup permission error formatting
+  assert(typeof installer.permissionError === 'function', 'permissionError must be exported');
+  const backupPath = '/opt/Antigravity/resources/app.asar.ascii-wallpapers.backup';
+  const oldBackupPath = '/opt/Antigravity/resources/app.asar.ascii-wallpapers.backup.previous-12345';
+
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+  process.argv[2] = 'install';
+  const linuxBackupErr = installer.permissionError(backupPath);
+  assert.strictEqual(
+    linuxBackupErr.message,
+    'Permission denied writing to ' + backupPath + '. Run with: sudo node manage-wallpapers.cjs install'
+  );
+  const linuxOldErr = installer.permissionError(oldBackupPath);
+  assert.strictEqual(
+    linuxOldErr.message,
+    'Permission denied writing to ' + oldBackupPath + '. Run with: sudo node manage-wallpapers.cjs install'
+  );
+
+  Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+  const winBackupErr = installer.permissionError(backupPath);
+  assert.strictEqual(
+    winBackupErr.message,
+    'Permission denied writing to ' + backupPath + '. Run PowerShell as Administrator and try again.'
+  );
 } finally {
   Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   process.argv = originalArgv;
@@ -186,6 +211,16 @@ try {
   // Sentinel missing
   fs.readFileSync = () => Buffer.from('binary data without sentinel');
   assert.strictEqual(installer.asarIntegrityFuse(), 'unknown', 'Should return "unknown" when sentinel is missing');
+
+  // Unreadable binary (EACCES / EPERM / EIO)
+  fs.readFileSync = () => { const err = new Error('permission denied'); err.code = 'EACCES'; throw err; };
+  assert.strictEqual(installer.asarIntegrityFuse(), 'unknown', 'Should return "unknown" when binary read throws EACCES');
+
+  fs.readFileSync = () => { const err = new Error('operation not permitted'); err.code = 'EPERM'; throw err; };
+  assert.strictEqual(installer.asarIntegrityFuse(), 'unknown', 'Should return "unknown" when binary read throws EPERM');
+
+  fs.readFileSync = () => { const err = new Error('i/o error'); err.code = 'EIO'; throw err; };
+  assert.strictEqual(installer.asarIntegrityFuse(), 'unknown', 'Should return "unknown" when binary read throws EIO');
 
   // 3. inspect() behavior on Linux
   const dummyArchive = makeMinimalAsar();

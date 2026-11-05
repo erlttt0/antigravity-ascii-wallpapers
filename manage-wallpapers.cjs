@@ -57,7 +57,9 @@ function asarIntegrityFuse(){
   ? path.join(appDir,'Antigravity.exe')
   : [path.join(appDir,'antigravity'),path.join(appDir,'Antigravity')].find(fs.existsSync)||path.join(appDir,'antigravity');
  if(!fs.existsSync(exe))return 'unknown';
- const bytes=fs.readFileSync(exe),sentinel=Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX'),i=bytes.indexOf(sentinel);
+ let bytes;
+ try{bytes=fs.readFileSync(exe);}catch{return 'unknown';}
+ const sentinel=Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX'),i=bytes.indexOf(sentinel);
  if(i<0)return 'unknown';
  const length=bytes[i+sentinel.length+1],wire=bytes.subarray(i+sentinel.length+2,i+sentinel.length+2+length).toString('latin1');
  return wire.length>4?(wire[4]==='1'?'on':wire[4]==='0'?'off':'unknown'):'unknown';
@@ -123,6 +125,10 @@ function repack(original,script,mainScript){
  }}verify(decoded.header);
  return output;
 }
+function permissionError(p){
+ if(process.platform==='win32')return Error('Permission denied writing to '+p+'. Run PowerShell as Administrator and try again.');
+ return Error('Permission denied writing to '+p+'. Run with: sudo node manage-wallpapers.cjs '+(process.argv[2]||'install'));
+}
 function replace(bytes){
  const temp=archive+'.ascii-wallpapers.tmp';
  try{fs.writeFileSync(temp,bytes);fs.renameSync(temp,archive);}
@@ -130,8 +136,7 @@ function replace(bytes){
   try{fs.unlinkSync(temp);}catch{}
   if(e.code==='EBUSY')throw Error('The app archive is in use. Close Antigravity completely (including the tray icon) and try again.');
   if(['EACCES','EPERM'].includes(e.code)){
-   if(process.platform==='win32')throw Error('Permission denied writing to '+archive+'. Run PowerShell as Administrator and try again.');
-   throw Error('Permission denied writing to '+archive+'. Run with: sudo node manage-wallpapers.cjs '+(process.argv[2]||'install'));
+   throw permissionError(archive);
   }
   throw e;
  }
@@ -175,9 +180,9 @@ function main(){
  // A backup from an older app build is kept beside the new one rather than overwritten.
  if(fs.existsSync(backup)&&sha(fs.readFileSync(backup))!==sha(original)){
   const old=backup+'.'+(r?.version||'previous')+'-'+Date.now();
-  fs.renameSync(backup,old);console.log('Kept the backup from the previous app build at '+old);
+  try{fs.renameSync(backup,old);}catch(e){if(['EACCES','EPERM'].includes(e.code))throw permissionError(old);throw e;}console.log('Kept the backup from the previous app build at '+old);
  }
- if(!fs.existsSync(backup))fs.writeFileSync(backup,original,{flag:'wx'});
+ if(!fs.existsSync(backup)){try{fs.writeFileSync(backup,original,{flag:'wx'});}catch(e){if(['EACCES','EPERM'].includes(e.code))throw permissionError(backup);throw e;}}
  const next={version:report.version,verified:report.verified,original:sha(original),patched:sha(patched),installedAt:new Date().toISOString(),backup};
  replace(patched);
  // Written only after a successful swap, so a failed swap leaves the previous receipt describing the archive on disk.
@@ -187,4 +192,4 @@ function main(){
 if(require.main===module){
  try{main();}catch(e){console.error(e.message);process.exitCode=1;}
 }
-module.exports={resolveArchive,replace,inspect,repack,asarIntegrityFuse,VERIFIED,main};
+module.exports={resolveArchive,replace,inspect,repack,asarIntegrityFuse,VERIFIED,permissionError,main};

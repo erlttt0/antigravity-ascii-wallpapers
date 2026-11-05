@@ -53,7 +53,9 @@ function packedText(bytes,p){
 function asarIntegrityFuse(){
  const exe=process.platform==='darwin'
   ? path.join(appDir,'Frameworks','Electron Framework.framework','Electron Framework')
-  : path.join(appDir,'Antigravity.exe');
+  : process.platform==='win32'
+  ? path.join(appDir,'Antigravity.exe')
+  : [path.join(appDir,'antigravity'),path.join(appDir,'Antigravity')].find(fs.existsSync)||path.join(appDir,'antigravity');
  if(!fs.existsSync(exe))return 'unknown';
  const bytes=fs.readFileSync(exe),sentinel=Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX'),i=bytes.indexOf(sentinel);
  if(i<0)return 'unknown';
@@ -79,7 +81,7 @@ function inspect(original,script,mainScript){
  const fuse=asarIntegrityFuse();
  if(fuse==='on')errors.push('Electron ASAR integrity validation is enabled for this build');
  if(fuse==='unknown'&&process.platform==='darwin')errors.push('could not verify the macOS Electron ASAR integrity fuse; refusing to modify the application');
- else if(fuse==='unknown')warnings.push('could not read Electron fuses from Antigravity.exe');
+ else if(fuse==='unknown')warnings.push('could not read Electron fuses from '+(process.platform==='win32'?'Antigravity.exe':'antigravity binary'));
  if(preload!==null){
   if(!preload.includes('const electron_1 = require("electron")'))warnings.push('preload has no electron_1; preferences fall back to page storage');
   if(!preload.includes('electronNativeAPI'))warnings.push('preload has no electronNativeAPI; the title bar will not be recolored');

@@ -109,4 +109,119 @@ try {
   fs.unlinkSync = originalUnlink;
 }
 
+// Test 5: Linux ELF integrity fuse inspection and inspect() reporting
+assert(typeof installer.asarIntegrityFuse === 'function', 'asarIntegrityFuse must be exported');
+assert(typeof installer.inspect === 'function', 'inspect must be exported');
+
+function makeFuseBuffer(wireString) {
+  const sentinel = Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX');
+  const version = Buffer.from([1]);
+  const wire = Buffer.from(wireString, 'latin1');
+  const len = Buffer.from([wire.length]);
+  return Buffer.concat([Buffer.from('ELF_HEADER_DUMMY_DATA'), sentinel, version, len, wire]);
+}
+
+function makeMinimalAsar() {
+  const json = Buffer.from(JSON.stringify({ files: {} }));
+  const padded = Math.ceil((4 + json.length) / 4) * 4;
+  const head = Buffer.alloc(8 + padded);
+  head.writeUInt32LE(4 + padded, 0);
+  head.writeUInt32LE(json.length, 4);
+  json.copy(head, 8);
+  const size = Buffer.alloc(8);
+  size.writeUInt32LE(4, 0);
+  size.writeUInt32LE(head.length, 4);
+  return Buffer.concat([size, head]);
+}
+
+const originalReadFileSync = fs.readFileSync;
+
+try {
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+  // 1. Binary lookup precedence: checks 'antigravity' first, then 'Antigravity'
+  let checkedPaths = [];
+  let readPath = null;
+  fs.existsSync = (p) => {
+    checkedPaths.push(p);
+    return path.basename(p) === 'antigravity';
+  };
+  fs.readFileSync = (p) => {
+    readPath = p;
+    return makeFuseBuffer('00001');
+  };
+
+  let status = installer.asarIntegrityFuse();
+  assert.strictEqual(status, 'on', 'Should return "on" when fuse 4 is "1"');
+  assert.strictEqual(path.basename(readPath), 'antigravity', 'Should prefer lowercase antigravity binary');
+
+  // If lowercase does not exist, checks Antigravity (capitalized)
+  checkedPaths = [];
+  readPath = null;
+  fs.existsSync = (p) => {
+    checkedPaths.push(p);
+    return path.basename(p) === 'Antigravity';
+  };
+  fs.readFileSync = (p) => {
+    readPath = p;
+    return makeFuseBuffer('00000');
+  };
+
+  status = installer.asarIntegrityFuse();
+  assert.strictEqual(status, 'off', 'Should return "off" when fuse 4 is "0"');
+  assert.strictEqual(path.basename(readPath), 'Antigravity', 'Should fallback to uppercase Antigravity binary');
+
+  // If neither exists, returns 'unknown'
+  fs.existsSync = () => false;
+  status = installer.asarIntegrityFuse();
+  assert.strictEqual(status, 'unknown', 'Should return "unknown" when binary does not exist');
+
+  // 2. Wire parsing edge cases
+  fs.existsSync = () => true;
+
+  // Wire too short
+  fs.readFileSync = () => makeFuseBuffer('000');
+  assert.strictEqual(installer.asarIntegrityFuse(), 'unknown', 'Should return "unknown" when fuse wire is too short');
+
+  // Sentinel missing
+  fs.readFileSync = () => Buffer.from('binary data without sentinel');
+  assert.strictEqual(installer.asarIntegrityFuse(), 'unknown', 'Should return "unknown" when sentinel is missing');
+
+  // 3. inspect() behavior on Linux
+  const dummyArchive = makeMinimalAsar();
+
+  // Fuse 'on' -> error
+  fs.readFileSync = () => makeFuseBuffer('00001');
+  let report = installer.inspect(dummyArchive, '', '');
+  assert(
+    report.errors.includes('Electron ASAR integrity validation is enabled for this build'),
+    'inspect() should push error when Linux fuse is "on"'
+  );
+
+  // Fuse 'unknown' on Linux -> warning mentioning 'antigravity binary'
+  fs.existsSync = () => false;
+  report = installer.inspect(dummyArchive, '', '');
+  assert(
+    report.warnings.includes('could not read Electron fuses from antigravity binary'),
+    'inspect() should push warning mentioning antigravity binary on Linux when fuse is unknown'
+  );
+  assert(
+    !report.warnings.some((w) => w.includes('Antigravity.exe')),
+    'inspect() should not mention Antigravity.exe on Linux'
+  );
+
+  // Fuse 'unknown' on Windows -> warning mentioning 'Antigravity.exe'
+  Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+  fs.existsSync = () => false;
+  report = installer.inspect(dummyArchive, '', '');
+  assert(
+    report.warnings.includes('could not read Electron fuses from Antigravity.exe'),
+    'inspect() should push warning mentioning Antigravity.exe on Windows when fuse is unknown'
+  );
+} finally {
+  Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  fs.existsSync = originalExists;
+  fs.readFileSync = originalReadFileSync;
+}
+
 console.log('Tests passed.');

@@ -1,4 +1,4 @@
-/* Usage: node manage-wallpapers.cjs install|verify|status|restore [app-or-asar-path] */
+/* Usage: node manage-wallpapers.cjs install|verify|status|restore|uninstall [app-or-asar-path] */
 'use strict';
 const fs=require('fs'), path=require('path'), crypto=require('crypto'), vm=require('vm'), os=require('os');
 function resolveArchive(){
@@ -10,7 +10,18 @@ function resolveArchive(){
  }
  const candidates=process.platform==='darwin'
   ? ['/Applications/Antigravity.app/Contents/Resources/app.asar',path.join(os.homedir(),'Applications','Antigravity.app','Contents','Resources','app.asar')]
-  : process.platform==='win32'&&process.env.LOCALAPPDATA?[path.join(process.env.LOCALAPPDATA,'Programs','antigravity','resources','app.asar')]:[];
+  : process.platform==='win32'&&process.env.LOCALAPPDATA
+  ? [path.join(process.env.LOCALAPPDATA,'Programs','antigravity','resources','app.asar')]
+  : process.platform==='linux'
+  ? [
+      '/opt/Antigravity/resources/app.asar',
+      '/opt/antigravity/resources/app.asar',
+      '/usr/lib/antigravity/resources/app.asar',
+      '/usr/lib/Antigravity/resources/app.asar',
+      path.join(os.homedir(),'.local','share','antigravity','resources','app.asar'),
+      path.join(os.homedir(),'.local','share','Antigravity','resources','app.asar')
+    ]
+  : [];
  return candidates.find(fs.existsSync)||candidates[0]||'';
 }
 const archive=resolveArchive();
@@ -113,11 +124,20 @@ function repack(original,script,mainScript){
 function replace(bytes){
  const temp=archive+'.ascii-wallpapers.tmp';
  try{fs.writeFileSync(temp,bytes);fs.renameSync(temp,archive);}
- catch(e){try{fs.unlinkSync(temp);}catch{}if(['EBUSY','EPERM','EACCES'].includes(e.code))throw Error('The app archive is in use. Close Antigravity completely (including the tray icon) and try again.');throw e;}
+ catch(e){
+  try{fs.unlinkSync(temp);}catch{}
+  if(e.code==='EBUSY')throw Error('The app archive is in use. Close Antigravity completely (including the tray icon) and try again.');
+  if(['EACCES','EPERM'].includes(e.code)){
+   if(process.platform==='win32')throw Error('Permission denied writing to '+archive+'. Run PowerShell as Administrator and try again.');
+   throw Error('Permission denied writing to '+archive+'. Run with: sudo node manage-wallpapers.cjs '+(process.argv[2]||'install'));
+  }
+  throw e;
+ }
 }
 function main(){
- const action=process.argv[2];
- if(!['install','restore','verify','status'].includes(action))throw Error('Use install, verify, status, or restore');
+ let action=process.argv[2];
+ if(action==='uninstall')action='restore';
+ if(!['install','restore','verify','status'].includes(action))throw Error('Use install, verify, status, restore, or uninstall');
  if(!fs.existsSync(archive))throw Error('Antigravity was not found at '+archive);
  const current=fs.readFileSync(archive),digest=sha(current);
  const r=fs.existsSync(receipt)?JSON.parse(fs.readFileSync(receipt,'utf8')):null;
@@ -162,4 +182,7 @@ function main(){
  fs.writeFileSync(receipt,JSON.stringify(next,null,2));
  console.log('Installed ASCII wallpapers for '+label+'. Original archive backed up at '+backup);
 }
-try{main();}catch(e){console.error(e.message);process.exitCode=1;}
+if(require.main===module){
+ try{main();}catch(e){console.error(e.message);process.exitCode=1;}
+}
+module.exports={resolveArchive,replace,inspect,repack,asarIntegrityFuse,VERIFIED,main};

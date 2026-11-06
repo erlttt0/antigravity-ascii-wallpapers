@@ -204,6 +204,10 @@
   function appearance(t,off){
     const full=!off&&prefs.recolor;
     setMode(t,!full);
+    const viewerReset=`
+      body[data-aw-theme] .surface-composer,body[data-aw-theme] iframe,body[data-aw-theme] embed,body[data-aw-theme] object,body[data-aw-theme] .pdfViewer,body[data-aw-theme] .textLayer,body[data-aw-theme] [class*="pdf" i],body[data-aw-theme] [class*="pdf" i] *,body[data-aw-theme] .monaco-editor,body[data-aw-theme] .monaco-editor *,body[data-aw-theme] [class*="artifact" i],body[data-aw-theme] [class*="artifact" i] *,body[data-aw-theme] .markdown-body,body[data-aw-theme] .prose{text-shadow:none!important}
+      body[data-aw-theme] iframe,body[data-aw-theme] embed,body[data-aw-theme] object,body[data-aw-theme] .pdfViewer,body[data-aw-theme] [class*="pdf" i],body[data-aw-theme] [class*="artifact" i]{isolation:isolate;color:initial}
+    `;
     if(off){delete document.body.dataset.awTheme;delete document.body.dataset.awMode;style.textContent='';host.style.colorScheme='normal';}
     else if(!full){
       document.body.dataset.awTheme=t.id;delete document.body.dataset.awMode;host.style.colorScheme=t.light?'light':'dark';
@@ -215,6 +219,7 @@
         body[data-aw-theme] .surface-composer{color:var(--foreground);text-shadow:none}
         body[data-aw-theme] .md-sticky-message-bleed,body[data-aw-theme] .md-sticky-message-bleed::before,body[data-aw-theme] .md-sticky-message-bleed::after{background:transparent!important}
         body[data-aw-theme] .agy-sheet [class*=bottom-0][class*=pointer-events-none]{background-image:none!important}
+        ${viewerReset}
       `;
     }else{
       document.body.dataset.awTheme=t.id;document.body.dataset.awMode=t.light?'light':'dark';host.style.colorScheme=t.light?'light':'dark';
@@ -234,6 +239,7 @@
         body[data-aw-theme] .agy-sidebar-row{--row-bg:${t.chrome}}body[data-aw-theme] ::selection{background:${t.light?'#72b5d34d':'#a4bbe645'}}
         body[data-aw-theme] ::-webkit-scrollbar-thumb{background:color-mix(in srgb,${t.muted} 45%,transparent);border-radius:8px}body[data-aw-theme] input,body[data-aw-theme] textarea,body[data-aw-theme] [contenteditable=true]{caret-color:${t.fg}}
         body[data-aw-mode=light] pre,body[data-aw-mode=light] code{--syntax-string:#477148;--syntax-keyword:#795498;--syntax-comment:#627b72}
+        ${viewerReset}
       `;
     }
     for(const k of ['panel','card','fg','muted','border','accent'])host.style.setProperty('--aw-'+k,t[k]);

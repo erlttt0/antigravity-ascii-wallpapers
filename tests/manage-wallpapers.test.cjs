@@ -259,4 +259,30 @@ try {
   fs.readFileSync = originalReadFileSync;
 }
 
+// Test 6: Document viewer CSS resets for PDF and text previewers
+const asciiSource = fs.readFileSync(path.resolve(__dirname, '../ascii-wallpapers.js'), 'utf8');
+
+assert(
+  asciiSource.includes('.pdfViewer') &&
+  asciiSource.includes('.textLayer') &&
+  asciiSource.includes('[class*="pdf" i]') &&
+  asciiSource.includes('.monaco-editor'),
+  'ascii-wallpapers.js must declare PDF and Monaco viewer reset selectors'
+);
+
+assert(
+  asciiSource.includes('text-shadow: none !important') || asciiSource.includes('text-shadow:none!important'),
+  'ascii-wallpapers.js must reset text-shadow on viewers'
+);
+
+assert(
+  asciiSource.includes('isolation: isolate') || asciiSource.includes('isolation:isolate'),
+  'ascii-wallpapers.js must isolate viewer stacking context'
+);
+
+assert(
+  asciiSource.includes('color: initial') || asciiSource.includes('color:initial'),
+  'ascii-wallpapers.js must reset color on document viewers'
+);
+
 console.log('Tests passed.');

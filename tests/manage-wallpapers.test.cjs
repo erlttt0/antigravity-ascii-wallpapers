@@ -259,4 +259,49 @@ try {
   fs.readFileSync = originalReadFileSync;
 }
 
+// Test 6: Document viewer CSS resets for PDF and text previewers
+const asciiSource = fs.readFileSync(path.resolve(__dirname, '../ascii-wallpapers.js'), 'utf8');
+
+const requiredSelectors = [
+  'iframe',
+  'embed',
+  'object',
+  '.pdfViewer',
+  '.textLayer',
+  '[class*="pdf" i]',
+  '.monaco-editor'
+];
+
+for (const selector of requiredSelectors) {
+  assert(
+    asciiSource.includes(selector),
+    `ascii-wallpapers.js must declare viewer reset selector: ${selector}`
+  );
+}
+
+assert(
+  asciiSource.includes('text-shadow: none !important') || asciiSource.includes('text-shadow:none!important'),
+  'ascii-wallpapers.js must reset text-shadow on viewers'
+);
+
+assert(
+  asciiSource.includes('isolation: isolate') || asciiSource.includes('isolation:isolate'),
+  'ascii-wallpapers.js must isolate viewer stacking context'
+);
+
+assert(
+  asciiSource.includes('color: initial') || asciiSource.includes('color:initial'),
+  'ascii-wallpapers.js must reset color on document viewers'
+);
+
+// Assert viewer reset is present in both stylesheet branches of appearance()
+const appearanceMatch = asciiSource.match(/function appearance\([^)]*\)\s*\{([\s\S]*?)\n\s*function apply/);
+assert(appearanceMatch, 'appearance() function must exist in ascii-wallpapers.js');
+const appearanceBody = appearanceMatch[1];
+const resetMatches = appearanceBody.match(/\$\{viewerReset\}/g) || [];
+assert(
+  appearanceBody.includes('viewerReset') && resetMatches.length >= 2,
+  'viewerReset must be included in both the wallpaper-only and full recolor stylesheet branches'
+);
+
 console.log('Tests passed.');

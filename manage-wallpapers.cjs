@@ -31,7 +31,10 @@ const receipt=archive+'.ascii-wallpapers.json';
 const MARKER='// BEGIN LOCAL ASCII WALLPAPERS';
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 // Builds that were inspected by hand. Any other build must pass inspect() before it is patched.
-const VERIFIED={'046fa2ba9abe96bc915eb7ed12887c067396a8a12148842ab4f4e2cd05a68feb':'2.28.2'};
+const VERIFIED={
+ '046fa2ba9abe96bc915eb7ed12887c067396a8a12148842ab4f4e2cd05a68feb':'2.28.2',
+ '290e1b7a1caa430a0c5367c7b433e8d284e2ca5d0b305e91e5ce8ec926f43283':'2.29.0'
+};
 function parse(bytes){
  if(bytes.readUInt32LE(0)!==4)throw Error('Unexpected ASAR format');
  const dataStart=8+bytes.readUInt32LE(4);

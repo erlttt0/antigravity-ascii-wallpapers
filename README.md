@@ -25,10 +25,10 @@ Live, animated backgrounds for the [Antigravity](https://antigravity.google) des
 
 ## Requirements
 
-- Linux, Windows, or macOS, with the standalone Antigravity app installed. On Windows, default location is `%LOCALAPPDATA%\Programs\antigravity`. On Linux, common paths in `/opt`, `/usr/lib`, and `~/.local/share` are detected automatically. macOS support is experimental and has not been validated on a Mac; the installer refuses to patch when it cannot verify the Electron integrity fuse.
+- Windows or macOS, with the standalone Antigravity app installed in the default location (`/Applications/Antigravity.app` on macOS, `%LOCALAPPDATA%\Programs\antigravity` on Windows).
 - [Node.js](https://nodejs.org) 18 or newer.
 
-Version **2.28.2** was inspected by hand. Other versions are checked automatically before anything is changed (see [Safety checks](#safety-checks)), and the installer refuses any build that fails them.
+Versions **2.29.0** and **2.28.2** were inspected by hand. Other versions are checked automatically before anything is changed (see [Safety checks](#safety-checks)), and the installer refuses any build that fails them.
 
 ## Install
 

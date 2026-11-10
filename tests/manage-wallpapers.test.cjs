@@ -330,4 +330,14 @@ assert(
   'appearance() must neutralize the opaque .agy-row-actions::before pseudo-element'
 );
 
+// Test 9: Verify dynamic text truncation on hover/active
+assert(
+  appearanceBody.includes('.agy-sidebar-row:hover > div:nth-child(2)'),
+  'appearance() must include dynamic text truncation on .agy-sidebar-row hover'
+);
+assert(
+  appearanceBody.includes('padding-right:76px') || appearanceBody.includes('padding-right: 76px'),
+  'appearance() must allocate padding-right for floating actions to prevent text collision'
+);
+
 console.log('Tests passed.');

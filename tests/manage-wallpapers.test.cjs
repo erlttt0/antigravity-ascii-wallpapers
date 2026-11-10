@@ -316,4 +316,18 @@ assert(
   'appearance() must include transparency rules for .agy-inset-shell [data-side-panel-body]'
 );
 
+// Test 8: Verify frosted glass surface refinements in ascii-wallpapers.js
+assert(
+  appearanceBody.includes('.border-menu-border') && appearanceBody.includes('[role="menu"]'),
+  'appearance() must include frosted menu dropdown styling'
+);
+assert(
+  appearanceBody.includes('.agy-sidebar-row.bg-sidebar-secondary'),
+  'appearance() must include frosted active sidebar item styling'
+);
+assert(
+  appearanceBody.includes('.agy-row-actions::before'),
+  'appearance() must neutralize the opaque .agy-row-actions::before pseudo-element'
+);
+
 console.log('Tests passed.');

@@ -304,4 +304,16 @@ assert(
   'viewerReset must be included in both the wallpaper-only and full recolor stylesheet branches'
 );
 
+// Test 7: Verify Antigravity 2.30.0+ inset container transparency rules in ascii-wallpapers.js
+const insetSelector = '.agy-sheet[data-sheet-inset] [data-main-content-body]';
+const insetMatches = appearanceBody.match(/\.agy-sheet\[data-sheet-inset\]\s*\[data-main-content-body\]/g) || [];
+assert(
+  insetMatches.length >= 2,
+  'inset container transparency rule must be included in both the wallpaper-only and full recolor stylesheet branches'
+);
+assert(
+  appearanceBody.includes('.agy-inset-shell [data-side-panel-body]'),
+  'appearance() must include transparency rules for .agy-inset-shell [data-side-panel-body]'
+);
+
 console.log('Tests passed.');

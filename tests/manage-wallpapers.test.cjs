@@ -304,4 +304,71 @@ assert(
   'viewerReset must be included in both the wallpaper-only and full recolor stylesheet branches'
 );
 
+// Test 7: Verify Antigravity 2.30.0+ inset container transparency rules in ascii-wallpapers.js
+const insetSelector = '.agy-sheet[data-sheet-inset] [data-main-content-body]';
+const insetMatches = appearanceBody.match(/\.agy-sheet\[data-sheet-inset\]\s*\[data-main-content-body\]/g) || [];
+assert(
+  insetMatches.length >= 2,
+  'inset container transparency rule must be included in both the wallpaper-only and full recolor stylesheet branches'
+);
+assert(
+  appearanceBody.includes('.agy-inset-shell [data-side-panel-body]'),
+  'appearance() must include transparency rules for .agy-inset-shell [data-side-panel-body]'
+);
+
+// Test 8: Verify frosted glass surface refinements in ascii-wallpapers.js
+assert(
+  appearanceBody.includes('.border-menu-border') && appearanceBody.includes('[role="menu"]'),
+  'appearance() must include frosted menu dropdown styling'
+);
+assert(
+  appearanceBody.includes('.agy-sidebar-row.bg-sidebar-secondary'),
+  'appearance() must include frosted active sidebar item styling'
+);
+assert(
+  appearanceBody.includes('.agy-row-actions::before'),
+  'appearance() must neutralize the opaque .agy-row-actions::before pseudo-element'
+);
+
+// Test 9: Verify dynamic text truncation on hover/active
+assert(
+  appearanceBody.includes('.agy-sidebar-row:hover > div:nth-child(2)'),
+  'appearance() must include dynamic text truncation on .agy-sidebar-row hover'
+);
+assert(
+  appearanceBody.includes('padding-right:76px') || appearanceBody.includes('padding-right: 76px'),
+  'appearance() must allocate padding-right for floating actions to prevent text collision'
+);
+
+// Test 10: Verify sidebar and header share the same glass recipe (30% tint, 10px blur) so they match
+const glass = 'background-color:color-mix(in srgb,${t.chrome} 30%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;';
+assert(
+  appearanceBody.includes('nav.bg-sidebar{' + glass + 'border-right') &&
+  appearanceBody.includes('.agy-shell > .shrink-0{position:relative!important;' + glass + 'border-bottom:0!important}'),
+  'appearance() must give the sidebar and .agy-shell > .shrink-0 header the identical glass recipe'
+);
+
+// Test 11: Verify the header has no bottom border, so header and sidebar read as one block
+assert(
+  !appearanceBody.includes('border-bottom:1px solid color-mix(in srgb,${t.border} 30%,rgba(255,255,255,0.08))'),
+  'appearance() must not draw a bottom border on .agy-shell > .shrink-0'
+);
+
+// Test 12: Verify calm titlebar zone prevents bright character bleeding into header
+const scenesSource = fs.readFileSync(path.join(__dirname, '..', 'wallpaper-scenes.js'), 'utf8');
+assert(
+  scenesSource.includes('topH') && scenesSource.includes('ey <= 0'),
+  'wallpaper-scenes.js must define topH titlebar calm boundary and suppress glyph rendering when ey <= 0'
+);
+assert(
+  asciiSource.includes('topHeight') && asciiSource.includes('.agy-shell > .shrink-0'),
+  'ascii-wallpapers.js must calculate topHeight from .agy-shell > .shrink-0 and pass it into calmBox'
+);
+
+// Test 13: Verify transparent window controls overlay color to prevent opaque cutout
+assert(
+  asciiSource.includes("color:'#00000000'") || asciiSource.includes('color: "#00000000"') || asciiSource.includes("color: '#00000000'"),
+  'ascii-wallpapers.js must set transparent titleBarOverlay color (#00000000) to blend with glass topbar'
+);
+
 console.log('Tests passed.');

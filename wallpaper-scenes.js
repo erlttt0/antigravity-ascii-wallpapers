@@ -635,10 +635,12 @@ const drawAsciiScene = (() => {
     const K = st.K, lg = st.lg, atlas = st.atlas, pal = sc.pal, inkRow = pal.length, phase = Math.floor(seconds * 2.2);
     o.cw = cw / height; o.ch = ch / height; o.e = fx?.energy || 0; o.p = fx?.pulse || 0; sc.pre?.(seconds, A, o);
     const cl = calm ? calm.l / height : -1, cr = calm ? calm.r / height : -1;
+    const topH = calm?.t != null ? (calm.t / height) : (height > 220 ? 38 / height : 0);
     const glowUp = 1 + .35 * (fx?.energy || 0), fp = fx?.pulse || 0, rx = calm ? (cl + cr) / 2 : half, ry = .92;
     const rr = (1 - fp * fp) * Math.hypot(Math.max(rx, A - rx), ry) * 1.05, band = .07, amp = .45 + .75 * fp;
     for (let j = 0, p = 0; j < rows; j++) {
       const y = (j + .5) * ch / height;
+      const ey = topH > 0 ? sm(0, .035, y - topH) : 1;
       for (let i = 0; i < cols; i++, p++) {
         const x = (i + .5) * cw / height;
         o.v = 0; o.c = 0; o.t = 0; o.g = -1; sc.f(x, y, seconds, A, o, i, j);
@@ -647,13 +649,15 @@ const drawAsciiScene = (() => {
           const d = Math.hypot(x - rx, y - ry), q = Math.max(1 - Math.abs(d - rr) / band, .55 * (1 - Math.abs(d - rr * .72) / band));
           if (q > 0) { const rv = q * amp; if (rv > o.v) { if (o.v < .06) o.c = 0; o.v = rv; o.g = -1; } }
         }
-        // Keep the conversation column calm: subjects pass behind it as faint characters, never solid tiles.
-        const e = cl < 0 ? sm(A * .17, A * .33, Math.abs(x - half)) : sm(-.01, .08, Math.max(cl - x, x - cr));
+        // Keep the conversation column and titlebar calm: subjects pass behind chat as faint characters, and dissolve before the titlebar.
+        const ex = cl < 0 ? sm(A * .17, A * .33, Math.abs(x - half)) : sm(-.01, .08, Math.max(cl - x, x - cr));
+        const e = ex * ey;
         let tile = o.t, g, b = 3;
         // Solid subjects dissolve (dithered, no hard edge) into a light stipple as they cross the centre.
         if (tile && hash(i * 3 + 1, j * 5 + 2) > e * 1.8) { tile = 0; o.v = .5; o.g = hash(i, j) > .45 ? 2 : 1; }
         if (tile) g = o.g >= 0 ? o.g : TG[Math.floor(hash(i + (hash(i, j + phase * 31) > .88 ? phase : 0), j) * TG.length)];
-        else { const v = o.v * (.45 + .55 * e) * glowUp; g = v < .06 ? 0 : o.g >= 0 ? (v > .12 ? o.g : 0) : Math.min(11, 1 + Math.floor(v * 11)); b = v > .7 ? 3 : v > .45 ? 2 : v > .25 ? 1 : 0; }
+        else { const v = o.v * (.45 + .55 * e) * glowUp * ey; g = v < .06 ? 0 : o.g >= 0 ? (v > .12 ? o.g : 0) : Math.min(11, 1 + Math.floor(v * 11)); b = v > .7 ? 3 : v > .45 ? 2 : v > .25 ? 1 : 0; }
+        if (ey <= 0) { g = 0; tile = 0; }
         const shade = tile && ((p * 2654435761) >>> 0) % 3 === 0 ? 1 : 0;
         const kk = g ? g | o.c << 5 | tile << 9 | b << 10 | shade << 12 : 0;
         if (kk === K[p]) continue; K[p] = kk;

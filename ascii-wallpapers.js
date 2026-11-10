@@ -190,10 +190,12 @@
     panel.style.width=width+'px';panel.style.left=left+'px';
     const panelHeight=panel.hidden?(innerWidth<=650?220:142):panel.getBoundingClientRect().height;
     const composerGroup=composerElement?.closest('[style*="--max-conversation-width"]')?.getBoundingClientRect();
-    // The artwork keeps the live text column calm, whatever the window width.
+    // The artwork keeps the live text column and titlebar calm, whatever the window width.
     const column=composerGroup?.width?composerGroup:composer;
-    const next=column?.width?{l:Math.round(column.left-bounds.left),r:Math.round(column.right-bounds.left)}:null;
-    if(next?.l!==calmBox?.l||next?.r!==calmBox?.r){calmBox=next;render();}
+    const topBar=document.querySelector('.agy-shell > .shrink-0');
+    const topHeight=Math.round(topBar?.getBoundingClientRect().height||38);
+    const next=column?.width?{l:Math.round(column.left-bounds.left),r:Math.round(column.right-bounds.left),t:topHeight}:{l:-1,r:-1,t:topHeight};
+    if(next?.l!==calmBox?.l||next?.r!==calmBox?.r||next?.t!==calmBox?.t){calmBox=next;render();}
     const bottomAnchor=composerGroup&&composerGroup.height<350?Math.min(composerGroup.top,composer?.top??innerHeight-85):composer?.top??innerHeight-85;
     const top=Math.max(48,bottomAnchor-panelHeight-12);panel.style.top=top+'px';
   }
@@ -219,7 +221,8 @@
         body[data-aw-theme] .agy-inset-shell{background:transparent!important;background-color:transparent!important}
         body[data-aw-theme] .agy-sheet{isolation:isolate;background:transparent!important;background-color:transparent!important;color:${t.fg};text-shadow:0 0 2px ${t.light?t.floor:t.sky},0 0 6px ${t.light?t.floor:t.sky},0 0 12px ${t.light?t.floor:t.sky}}
         body[data-aw-theme] .bg-sidebar{background:transparent!important;background-color:transparent!important}
-        body[data-aw-theme] .agy-inset-shell > div:first-child > div:first-child,body[data-aw-theme] [aria-label="Sidebar"],body[data-aw-theme] nav.bg-sidebar{background-color:color-mix(in srgb,${t.chrome} 65%,transparent)!important;backdrop-filter:blur(20px)!important;-webkit-backdrop-filter:blur(20px)!important;border-right:1px solid color-mix(in srgb,${t.border} 35%,transparent)!important}
+        body[data-aw-theme] .agy-inset-shell > div:first-child > div:first-child,body[data-aw-theme] [aria-label="Sidebar"],body[data-aw-theme] nav.bg-sidebar{background-color:color-mix(in srgb,${t.chrome} 38%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;border-right:1px solid color-mix(in srgb,${t.border} 30%,rgba(255,255,255,0.08))!important}
+        body[data-aw-theme] .agy-shell > .shrink-0{position:relative!important;background-color:color-mix(in srgb,${t.chrome} 38%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;border-bottom:1px solid color-mix(in srgb,${t.border} 30%,rgba(255,255,255,0.08))!important}
         body[data-aw-theme] .agy-sidebar-row{--row-bg:transparent!important}
         body[data-aw-theme] .agy-sidebar-row:hover:not(.bg-sidebar-secondary){background-color:rgba(255,255,255,0.07)!important}
         body[data-aw-theme] .agy-sidebar-row.bg-sidebar-secondary,body[data-aw-theme] .agy-sidebar-row[data-active="true"]{background-color:color-mix(in srgb,${t.accent} 20%,${t.panel})!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;border:1px solid color-mix(in srgb,${t.accent} 35%,transparent)!important;box-shadow:0 2px 10px rgba(0,0,0,0.2)!important}
@@ -248,7 +251,8 @@
         body[data-aw-theme] .agy-inset-shell{background:transparent!important;background-color:transparent!important}
         body[data-aw-theme] .agy-sheet{isolation:isolate;background:transparent!important;background-color:transparent!important}
         body[data-aw-theme] .bg-sidebar{background:transparent!important;background-color:transparent!important}
-        body[data-aw-theme] .agy-inset-shell > div:first-child > div:first-child,body[data-aw-theme] [aria-label="Sidebar"],body[data-aw-theme] nav.bg-sidebar{background-color:color-mix(in srgb,${t.chrome} 65%,transparent)!important;backdrop-filter:blur(20px)!important;-webkit-backdrop-filter:blur(20px)!important;border-right:1px solid color-mix(in srgb,${t.border} 35%,transparent)!important}
+        body[data-aw-theme] .agy-inset-shell > div:first-child > div:first-child,body[data-aw-theme] [aria-label="Sidebar"],body[data-aw-theme] nav.bg-sidebar{background-color:color-mix(in srgb,${t.chrome} 38%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;border-right:1px solid color-mix(in srgb,${t.border} 30%,rgba(255,255,255,0.08))!important}
+        body[data-aw-theme] .agy-shell > .shrink-0{position:relative!important;background-color:color-mix(in srgb,${t.chrome} 38%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;border-bottom:1px solid color-mix(in srgb,${t.border} 30%,rgba(255,255,255,0.08))!important}
         body[data-aw-theme] .agy-sidebar-row{--row-bg:transparent!important}
         body[data-aw-theme] .agy-sidebar-row:hover:not(.bg-sidebar-secondary){background-color:rgba(255,255,255,0.07)!important}
         body[data-aw-theme] .agy-sidebar-row.bg-sidebar-secondary,body[data-aw-theme] .agy-sidebar-row[data-active="true"]{background-color:color-mix(in srgb,${t.accent} 20%,${t.panel})!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;border:1px solid color-mix(in srgb,${t.accent} 35%,transparent)!important;box-shadow:0 2px 10px rgba(0,0,0,0.2)!important}

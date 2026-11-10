@@ -340,4 +340,28 @@ assert(
   'appearance() must allocate padding-right for floating actions to prevent text collision'
 );
 
+// Test 10: Verify balanced acrylic glass sidebar styling (Option 1)
+assert(
+  appearanceBody.includes('38%,transparent') && appearanceBody.includes('blur(10px)'),
+  'appearance() must include balanced acrylic glass sidebar styling with 38% tint and 10px blur'
+);
+
+// Test 11: Verify full-width unified glass header bar styling
+assert(
+  appearanceBody.includes('.agy-shell > .shrink-0') &&
+  appearanceBody.includes('border-bottom:1px solid color-mix(in srgb,${t.border} 30%,rgba(255,255,255,0.08))'),
+  'appearance() must include full-width unified frosted glass header styling on .agy-shell > .shrink-0'
+);
+
+// Test 12: Verify calm titlebar zone prevents bright character bleeding into header
+const scenesSource = fs.readFileSync(path.join(__dirname, '..', 'wallpaper-scenes.js'), 'utf8');
+assert(
+  scenesSource.includes('topH') && scenesSource.includes('ey <= 0'),
+  'wallpaper-scenes.js must define topH titlebar calm boundary and suppress glyph rendering when ey <= 0'
+);
+assert(
+  asciiSource.includes('topHeight') && asciiSource.includes('.agy-shell > .shrink-0'),
+  'ascii-wallpapers.js must calculate topHeight from .agy-shell > .shrink-0 and pass it into calmBox'
+);
+
 console.log('Tests passed.');

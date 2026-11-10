@@ -364,4 +364,10 @@ assert(
   'ascii-wallpapers.js must calculate topHeight from .agy-shell > .shrink-0 and pass it into calmBox'
 );
 
+// Test 13: Verify transparent window controls overlay color to prevent opaque cutout
+assert(
+  asciiSource.includes("color:'#00000000'") || asciiSource.includes('color: "#00000000"') || asciiSource.includes("color: '#00000000'"),
+  'ascii-wallpapers.js must set transparent titleBarOverlay color (#00000000) to blend with glass topbar'
+);
+
 console.log('Tests passed.');

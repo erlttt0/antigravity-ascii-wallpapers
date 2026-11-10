@@ -277,7 +277,7 @@
       `;
     }
     for(const k of ['panel','card','fg','muted','border','accent'])host.style.setProperty('--aw-'+k,t[k]);
-    const colors=full?{color:t.chrome,symbolColor:t.fg}:originalChrome;
+    const colors=full?{color:'#00000000',symbolColor:t.fg}:originalChrome;
     if(colors)windowAPI?.setTitleBarOverlay(colors)?.catch?.(()=>{});
   }
   function apply(){

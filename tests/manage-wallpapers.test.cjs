@@ -344,7 +344,7 @@ assert(
 const glass = 'background-color:color-mix(in srgb,${t.chrome} 30%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;';
 assert(
   appearanceBody.includes('nav.bg-sidebar{' + glass + 'border-right') &&
-  appearanceBody.includes('.agy-shell > .shrink-0{position:relative!important;' + glass + 'border-bottom:0!important}'),
+  appearanceBody.includes('.agy-shell > .shrink-0{position:relative!important;z-index:30!important;' + glass + 'border-bottom:0!important}'),
   'appearance() must give the sidebar and .agy-shell > .shrink-0 header the identical glass recipe'
 );
 
@@ -370,5 +370,34 @@ assert(
   asciiSource.includes("color:'#00000000'") || asciiSource.includes('color: "#00000000"') || asciiSource.includes("color: '#00000000'"),
   'ascii-wallpapers.js must set transparent titleBarOverlay color (#00000000) to blend with glass topbar'
 );
+
+// Test 9: quotaGroups merges Low/Medium/High variants, keeps the lowest fraction, and treats a missing fraction as 0
+const quotaMatch = asciiSource.match(/const hasQuota[\s\S]*?function quotaGroups\([\s\S]*?\r?\n  \}\r?\n/);
+assert(quotaMatch, 'quotaSummary() and quotaGroups() must exist in ascii-wallpapers.js');
+const { quotaSummary, quotaGroups } = new Function(quotaMatch[0] + 'return {quotaSummary,quotaGroups};')();
+
+// Test 10: quotaSummary keeps server group order, labels windows, and takes the tighter limit per group
+const summary = quotaSummary([
+  { displayName: 'Gemini Models', description: 'Flash, Pro', buckets: [
+    { window: 'weekly', remainingFraction: 0.97, resetTime: '2026-11-14T13:43:15Z' },
+    { window: '5h', resetTime: '2026-11-11T00:34:52Z' }
+  ] },
+  { displayName: 'Claude and GPT models', buckets: [{ window: 'weekly', remainingFraction: 1, resetTime: '2026-11-17T19:34:52Z' }] },
+  { displayName: 'Empty', buckets: [{}] }
+]);
+assert.deepStrictEqual(summary.map(g => [g.name, g.left]), [['Gemini Models', 0], ['Claude and GPT models', 1]]);
+assert.deepStrictEqual(summary[0].buckets.map(b => [b.label, b.left]), [['Weekly', 0.97], ['5-hour', 0]]);
+assert.strictEqual(summary[0].info, 'Flash, Pro');
+assert.deepStrictEqual(quotaSummary(undefined), []);
+const groups = quotaGroups([
+  { label: 'Claude Opus 5.5 (Low)', quotaInfo: { remainingFraction: 0.8, resetTime: '2026-11-11T00:00:00Z' } },
+  { label: 'Claude Opus 5.5 (High)', quotaInfo: { remainingFraction: 0.4, resetTime: '2026-11-11T00:00:00Z' } },
+  { label: 'Gemini Flash', quotaInfo: { resetTime: '2026-11-12T00:00:00Z' } },
+  { label: 'Unlimited', quotaInfo: {} },
+  { label: 'No info' }
+]);
+assert.deepStrictEqual(groups.map(g => [g.name, g.left]), [['Gemini Flash', 0], ['Claude Opus 5.5', 0.4]]);
+assert.strictEqual(groups[1].buckets[0].reset, Date.parse('2026-11-11T00:00:00Z'));
+assert.deepStrictEqual(quotaGroups(undefined), []);
 
 console.log('Tests passed.');

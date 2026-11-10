@@ -1,6 +1,6 @@
 # ASCII Wallpapers for Antigravity
 
-Live, animated backgrounds for the [Antigravity](https://antigravity.google) desktop app, drawn entirely in text characters. 23 themes, a one-click picker, and nothing leaves your machine.
+Live, animated backgrounds for the [Antigravity](https://antigravity.google) desktop app, drawn entirely in text characters. 50 themes, a searchable sidebar picker, and nothing leaves your machine.
 
 **[Watch the demo and see the themes →](https://mix4o445.github.io/antigravity-ascii-wallpapers/)**
 
@@ -10,13 +10,15 @@ Live, animated backgrounds for the [Antigravity](https://antigravity.google) des
 
 ## Features
 
-- **23 live themes**: 9 light and 14 dark. Cloud Drift, Aurora, Honu Lagoon, Koi Pond, Jellyfish, Paper Boats, Sakura, Fireflies, Moonlit, Ember Dunes, Night Rain, Snowfall, Sky Lanterns, Windy Meadow, Spiral Galaxy, Bamboo Grove, Digital Rain, Morning Tide, Autumn Leaves, Alpine Dawn, Retro Sunset, Lava Lamp and Starry Catnap.
+- **50 live themes**: 22 light and 28 dark. Cloud Drift, Aurora, Honu Lagoon, Koi Pond, Jellyfish, Paper Boats, Sakura, Fireflies, Moonlit, Ember Dunes, Night Rain, Snowfall, Sky Lanterns, Windy Meadow, Spiral Galaxy, Bamboo Grove, Digital Rain, Morning Tide, Autumn Leaves, Alpine Dawn, Retro Sunset, Lava Lamp, Starry Catnap, Supercell, Black Smokers, Candlelight, Neon Alley, Black Hole, Volcano, Swirling Night, Radar Scope, Ice Giant, Kelp Forest, Signal Glitch, Peacock Feathers, Blueprint, Stained Glass, Ink Wash, Ice Cave, Hot Air Balloons, Coral Reef, Pop Art, Paper Cranes, Matcha, Desert Oasis, Lavender Fields, Windmills, Island Palms, Moire and Zen Garden.
+- **Sidebar picker**: themes open in a panel docked to the right, with live previews, names, search, a Light/Dark filter and Shuffle. Arrow keys move through the grid.
 - **Whole-app theming (or wallpaper-only)**: the sidebar, menus, composer, title bar and window controls are recolored to match each scene, or uncheck **Adjust → Theme app** to keep Antigravity's stock UI chrome.
 - **Three ways to open or switch**: click **Themes** in the top right, press **Ctrl+Alt+W** (or **Cmd+Option+W** on macOS), or type `/theme` in the composer (including direct commands like `/theme catnap`, `/theme random` or `/theme off`).
 - **Controls**: Pause freezes the animation, Adjust sets intensity, glyph style (**ASCII**, **Braille**, **Blocks**, **Katakana**) and grid density (**Fine**, **Normal**, **Chunky**), and Off restores the stock look instantly.
 - **Reacts to your agents**: the scene speeds up and brightens while agents are running, with scene-specific touches (Catnap's ear twitches and tail swishes, Digital Rain adds streams, Aurora flares, Koi and Fireflies liven up). When an agent finishes, a ripple spreads out from the composer. If the window was hidden at the time, the ripple plays when you come back. Turn it off under **Adjust → React to agents**.
+- **Model quota on screen**: a small bar in the title bar shows your lowest remaining model quota. Click it to see every model with its percentage and time until reset. It refreshes every minute and after each agent finishes. Turn it off under **Adjust → Show quota**.
 - **Stays out of the way**: the background sits behind your text and the composer stays fully interactive. Rendering pauses while the window is hidden, and reduced-motion settings are respected.
-- **Private**: no network requests. Your pick is saved locally in `%APPDATA%\Antigravity\ascii-wallpapers-preferences.json` on Windows, `~/Library/Application Support/Antigravity/ascii-wallpapers-preferences.json` on macOS, or `~/.config/Antigravity/ascii-wallpapers-preferences.json` on Linux.
+- **Private**: no network requests leave your machine. The quota bar only asks Antigravity's own local server (`127.0.0.1`), the same way the app does. Your pick is saved locally in `%APPDATA%\Antigravity\ascii-wallpapers-preferences.json` on Windows, `~/Library/Application Support/Antigravity/ascii-wallpapers-preferences.json` on macOS, or `~/.config/Antigravity/ascii-wallpapers-preferences.json` on Linux.
 
 | | | |
 |---|---|---|
@@ -119,7 +121,7 @@ Agent reactivity uses the running-agent count that Antigravity already sends fro
 
 | File | Purpose |
 |---|---|
-| `wallpaper-scenes.js` | The 23 scene renderers |
+| `wallpaper-scenes.js` | The 50 scene renderers |
 | `ascii-wallpapers.js` | Theme definitions, picker UI and app recoloring |
 | `wallpapers-main.js` | Saves your preferences in the main process |
 | `manage-wallpapers.cjs` | Install, verify, status and restore |

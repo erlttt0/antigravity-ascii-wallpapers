@@ -3,13 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'">
 <title>ASCII Wallpapers for Antigravity</title>
-<meta name="description" content="23 live, animated backgrounds for the Antigravity desktop app, drawn entirely in text characters.">
+<meta name="description" content="50 live, animated backgrounds for the Antigravity desktop app, drawn entirely in text characters.">
 <meta property="og:title" content="ASCII Wallpapers for Antigravity">
-<meta property="og:description" content="23 live, animated backgrounds for Antigravity, drawn entirely in text characters.">
+<meta property="og:description" content="50 live, animated backgrounds for Antigravity, drawn entirely in text characters.">
 <meta property="og:image" content="https://mix4o445.github.io/antigravity-ascii-wallpapers/assets/poster.jpg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin referrerpolicy="no-referrer">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin referrerpolicy="no-referrer">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" crossorigin="anonymous" referrerpolicy="no-referrer">
 <style>
 :root{--bg:#000;--fg:#f5f5f7;--muted:#a1a1a6;--line:rgba(255,255,255,.12);--card:#111113;--grad:linear-gradient(90deg,#6ef2d0,#8f7bff,#ff8a5c)}
 *{box-sizing:border-box}
@@ -53,7 +55,7 @@ footer{padding:88px 0 56px;text-align:center;color:var(--muted);font-size:14px}
 <header>
   <h1>ASCII Wallpapers</h1>
   <p class="sub">for Antigravity</p>
-  <p class="lede">23 live, animated backgrounds for the Antigravity desktop app, painted entirely in text characters.</p>
+  <p class="lede">50 live, animated backgrounds for the Antigravity desktop app, painted entirely in text characters.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/Mix4o445/antigravity-ascii-wallpapers/archive/refs/heads/main.zip">Download</a>
     <a class="btn" href="https://github.com/Mix4o445/antigravity-ascii-wallpapers">View on GitHub</a>
@@ -77,20 +79,19 @@ footer{padding:88px 0 56px;text-align:center;color:var(--muted);font-size:14px}
 <section>
   <h2>Made to stay out of the way.</h2>
   <div class="feats">
-    <div class="feat"><h3>One-click picker</h3><p>Click <b>Themes</b>, press <kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>W</kbd> (<kbd>⌥</kbd> <kbd>⌘</kbd> <kbd>W</kbd> on Mac), or type <code>/theme</code>.</p></div>
-    <div class="feat"><h3>Whole-app theming</h3><p>The sidebar, menus, composer and title bar are recolored to match each scene.</p></div>
-    <div class="feat"><h3>9 light, 14 dark</h3><p>From Cloud Drift and Sakura to Night Rain and Spiral Galaxy.</p></div>
-    <div class="feat"><h3>Pause, Adjust, Off</h3><p>Freeze the motion, dial the intensity, or return to stock instantly.</p></div>
-    <div class="feat"><h3>Reacts to your agents</h3><p>The scene picks up while agents run and ripples outward when one finishes.</p></div>
+    <div class="feat"><h3>One-click picker</h3><p>Click <b>Themes</b>, press <kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>W</kbd> (<kbd>⌥</kbd> <kbd>⌘</kbd> <kbd>W</kbd> on Mac), or type <code>/theme</code> or <code>/quota</code>.</p></div>
+    <div class="feat"><h3>Whole-app theming</h3><p>The sidebar, menus, composer and title bar match each scene, or uncheck <b>Theme app</b> for stock chrome.</p></div>
+    <div class="feat"><h3>22 light, 28 dark</h3><p>50 live scenes, from Cloud Drift and Sakura to Night Rain and Spiral Galaxy.</p></div>
+    <div class="feat"><h3>Pause, Adjust, Off</h3><p>Freeze motion, dial intensity, glyph styles, and grid density, or return to stock instantly.</p></div>
+    <div class="feat"><h3>Reacts to your agents</h3><p>The scene picks up while agents run, ripples on completion, and tracks local quota status.</p></div>
     <div class="feat"><h3>Never covers your text</h3><p>The background sits behind your work, and the composer stays fully interactive.</p></div>
-    <div class="feat"><h3>100% local</h3><p>No network requests. Your pick is remembered on your machine.</p></div>
+    <div class="feat"><h3>100% local</h3><p>Picks stay on your machine; quota checks talk only to Antigravity's local <code>127.0.0.1</code> server.</p></div>
   </div>
 </section>
 
 <section>
   <h2>Install</h2>
-  <p class="center">macOS or Windows, Antigravity <b>2.29.0</b> (or 2.28.2), and <a href="https://nodejs.org">Node.js</a> 18+.</p>
-  <p class="center">Linux, Windows, or macOS, Antigravity (<b>2.28.2</b> hand-verified on Windows), and <a href="https://nodejs.org">Node.js</a> 18+.</p>
+  <p class="center">Linux, macOS, or Windows, Antigravity (<b>2.29.0</b> / <b>2.28.2</b> verified, with automatic safety checks on newer builds), and <a href="https://nodejs.org">Node.js</a> 18+.</p>
   <div class="steps">
     <div class="step"><div class="num">1</div><div><p><a href="https://github.com/Mix4o445/antigravity-ascii-wallpapers/archive/refs/heads/main.zip">Download the ZIP</a> and extract it.</p></div></div>
     <div class="step"><div class="num">2</div><div><p>Close Antigravity completely.</p></div></div>

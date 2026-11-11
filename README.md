@@ -16,7 +16,7 @@ Live, animated backgrounds for the [Antigravity](https://antigravity.google) des
 - **Three ways to open or switch**: click **Themes** in the top right, press **Ctrl+Alt+W** (or **Cmd+Option+W** on macOS), or type `/theme` in the composer (including direct commands like `/theme catnap`, `/theme random` or `/theme off`).
 - **Controls**: Pause freezes the animation, Adjust sets intensity, glyph style (**ASCII**, **Braille**, **Blocks**, **Katakana**) and grid density (**Fine**, **Normal**, **Chunky**), and Off restores the stock look instantly.
 - **Reacts to your agents**: the scene speeds up and brightens while agents are running, with scene-specific touches (Catnap's ear twitches and tail swishes, Digital Rain adds streams, Aurora flares, Koi and Fireflies liven up). When an agent finishes, a ripple spreads out from the composer. If the window was hidden at the time, the ripple plays when you come back. Turn it off under **Adjust → React to agents**.
-- **Model quota on screen**: a small bar in the title bar shows your lowest remaining model quota. Click it to see every model with its percentage and time until reset. It refreshes every minute and after each agent finishes. Turn it off under **Adjust → Show quota**.
+- **Model quota on screen**: a small bar in the title bar shows your lowest remaining model quota. Click it (or type `/quota` in the composer) to see every model with its percentage and time until reset. It refreshes every minute and after each agent finishes. Turn it off under **Adjust → Show quota**.
 - **Stays out of the way**: the background sits behind your text and the composer stays fully interactive. Rendering pauses while the window is hidden, and reduced-motion settings are respected.
 - **Private**: no network requests leave your machine. The quota bar only asks Antigravity's own local server (`127.0.0.1`), the same way the app does. Your pick is saved locally in `%APPDATA%\Antigravity\ascii-wallpapers-preferences.json` on Windows, `~/Library/Application Support/Antigravity/ascii-wallpapers-preferences.json` on macOS, or `~/.config/Antigravity/ascii-wallpapers-preferences.json` on Linux.
 
@@ -27,7 +27,7 @@ Live, animated backgrounds for the [Antigravity](https://antigravity.google) des
 
 ## Requirements
 
-- Windows or macOS, with the standalone Antigravity app installed in the default location (`/Applications/Antigravity.app` on macOS, `%LOCALAPPDATA%\Programs\antigravity` on Windows).
+- Linux, macOS, or Windows, with Antigravity installed in a default location (`/opt/Antigravity` or `/usr/share/antigravity` on Linux, `/Applications/Antigravity.app` on macOS, `%LOCALAPPDATA%\Programs\antigravity` or `%ProgramFiles%\Antigravity` on Windows), or pointed to with `ANTIGRAVITY_APP_PATH`.
 - [Node.js](https://nodejs.org) 18 or newer.
 
 Versions **2.29.0** and **2.28.2** were inspected by hand. Other versions are checked automatically before anything is changed (see [Safety checks](#safety-checks)), and the installer refuses any build that fails them.
@@ -54,6 +54,8 @@ Versions **2.29.0** and **2.28.2** were inspected by hand. Other versions are ch
    ```powershell
    node .\manage-wallpapers.cjs install
    ```
+
+   *(On Windows, you can also run `.\install.bat` or double-click `install.bat` to close Antigravity, patch, and relaunch it.)*
 
    *(Optional)* If Antigravity is installed in a non-standard location, pass the path directly:
    ```bash

@@ -1,6 +1,7 @@
 /* Antigravity animated themes. All artwork and preferences stay on this device. */
 (() => {
   'use strict';
+  if (window.self !== window.top) return;
   if (window.__agyAsciiInstalled) return;
   window.__agyAsciiInstalled = true;
   const KEY='asciiWallpaperPreferences.v1';
@@ -64,11 +65,11 @@
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const GLYPHS=['ascii','braille','blocks','katakana'],SCALES=['fine','normal','chunky'];
   let prefs={theme:'clouds',intensity:100,paused:reduced.matches,reactive:true,recolor:true,glyphs:'ascii',scale:'normal',quota:true};
-  let alive=true,open=false,shell,sheet,canvas,ctx,host,shadow,style,observer,resizeObserver;
+  let alive=true,suspended=false,open=false,shell,sheet,canvas,ctx,host,shadow,style,observer,resizeObserver;
   let sceneWidth=0,sceneHeight=0,calmBox=null;
-  let raf=0,last=0,time=0,layoutTimer=0,saveQueue=Promise.resolve(),lastPreview=-1;
+  let raf=0,last=0,time=0,layoutTimer=0,resizeRaf=0,previewRaf=0,saveQueue=Promise.resolve(),lastPreview=-1,triggerAnchor=null,needsModeSync=false;
   const cleanups=[],modeNodes=new Map();
-  let originalChrome;
+  let originalChrome,originalChromeCaptured=false;
   // Agent activity: energy eases toward 1 while agents run; pulse is a one-shot ripple when one finishes.
   let agents=0,energy=0,pulse=0,unhookAgents=null;
   const current=()=>themes.find(t=>t.id===prefs.theme)||themes[0];
@@ -80,7 +81,7 @@
     if(!ipc||typeof ipc.invoke!=='function')return;
     const original=ipc.invoke;
     const wrapped=function(channel,...args){
-      if(channel==='agent:update-active-count'){try{onAgents(Number(args[0]));}catch{}}
+      if(alive&&!suspended&&channel==='agent:update-active-count'){try{onAgents(Number(args[0]));}catch{}}
       return original.call(this,channel,...args);
     };
     try{ipc.invoke=wrapped;}catch{return;}
@@ -91,12 +92,13 @@
     const previous=agents;agents=n;
     // While the window is hidden the ripple waits, so it plays when you come back to a finished agent.
     if(n<previous&&prefs.reactive&&!prefs.paused&&prefs.theme!=='off')pulse=1;
-    if(n<previous)setTimeout(loadQuota,3000);
+    if(n<previous){clearTimeout(quotaRetryTimer);quotaRetryTimer=setTimeout(()=>{quotaRetryTimer=0;loadQuota();},3000);}
     schedule();
   }
   hookAgents();
   // Model quota comes from the local language server's GetUserStatus RPC, the same call Antigravity's own UI makes.
-  let quota=[],quotaTimer=0,csrf='',quotaPlan='',quotaAt=0,quotaFailed=false,lastLow=null;
+  let quota=[],quotaTimer=0,quotaRetryTimer=0,quotaSeq=0,quotaAbort=null,quotaLoading=false,csrf='',quotaPlan='',quotaAt=0,quotaFailed=false,lastLow=null;
+  function clearQuotaWork(){quotaSeq++;clearTimeout(quotaRetryTimer);quotaRetryTimer=0;quotaAbort?.abort();quotaAbort=null;quotaLoading=false;}
   // Protobuf JSON drops zero values, so an exhausted limit has a resetTime but no remainingFraction.
   const hasQuota=q=>q&&(q.resetTime||'remainingFraction' in q),fraction=v=>Math.min(1,Math.max(0,Number(v)||0));
   // RetrieveUserQuotaSummary: the shared-limit groups (Gemini, Claude and GPT, Argon) behind Antigravity's own View Usage menu.
@@ -117,24 +119,43 @@
     }
     return [...groups.values()].sort((a,b)=>a.left-b.left||a.name.localeCompare(b.name));
   }
-  async function quotaToken(){
+  async function quotaToken(force=false,signal){
     const find=s=>s.match(/"csrfToken":"([^"]+)"/)?.[1]||'';
-    if(!csrf)csrf=[...document.scripts].map(s=>find(s.textContent||'')).find(Boolean)||find(await (await fetch('/',{cache:'no-store'})).text());
+    if(force)csrf='';
+    if(!csrf&&!force)csrf=[...document.scripts].map(s=>find(s.textContent||'')).find(Boolean)||'';
+    if(!csrf){const r=await fetch('/',{cache:'no-store',signal});if(!r.ok)throw Error('token unavailable');csrf=find(await r.text());}
+    if(!csrf)throw Error('missing csrf token');
     return csrf;
   }
   async function loadQuota(){
-    if(!alive||!prefs.quota||document.hidden||!/^https:\/\/127\.0\.0\.1:\d+$/.test(location.origin))return;
+    if(!alive||suspended||!prefs.quota||document.hidden||!/^https:\/\/127\.0\.0\.1:\d+$/.test(location.origin))return;
+    const seq=++quotaSeq;quotaAbort?.abort();
+    const ctrl=new AbortController();quotaAbort=ctrl;quotaLoading=true;
+    const tmo=setTimeout(()=>ctrl.abort(),8000);
     shadow?.querySelector('.quota-refresh')?.setAttribute('data-busy','');
     try{
-      const headers={'Content-Type':'application/json','Connect-Protocol-Version':'1','x-codeium-csrf-token':await quotaToken()};
-      const rpc=name=>fetch('/exa.language_server_pb.LanguageServerService/'+name,{method:'POST',cache:'no-store',headers,body:'{}'}).then(r=>{if(r.status===401||r.status===403)csrf='';return r.ok?r.json():null;},()=>null);
-      const [summary,user]=await Promise.all([rpc('RetrieveUserQuotaSummary'),rpc('GetUserStatus')]);
-      const status=user?.userStatus,groups=quotaSummary(summary?.response?.groups);
-      if(!summary&&!status)throw Error('quota unavailable');
-      quota=groups.length?groups:quotaGroups(status?.cascadeModelConfigData?.clientModelConfigs);
+      const rpcOnce=async force=>{
+        const token=await quotaToken(force,ctrl.signal);
+        const headers={'Content-Type':'application/json','Connect-Protocol-Version':'1','x-codeium-csrf-token':token};
+        let authErr=false;
+        const rpc=name=>fetch('/exa.language_server_pb.LanguageServerService/'+name,{method:'POST',cache:'no-store',signal:ctrl.signal,headers,body:'{}'}).then(r=>{if(r.status===401||r.status===403){csrf='';authErr=true;}return r.ok?r.json():null;},()=>null);
+        const [summary,user]=await Promise.all([rpc('RetrieveUserQuotaSummary'),rpc('GetUserStatus')]);
+        return {summary,user,authErr};
+      };
+      let res=await rpcOnce(false);
+      if(res.authErr&&seq===quotaSeq&&alive)res=await rpcOnce(true);
+      if(seq!==quotaSeq||!alive)return;
+      const status=res.user?.userStatus,groups=quotaSummary(res.summary?.response?.groups),configs=status?.cascadeModelConfigData?.clientModelConfigs;
+      if((!res.summary&&!status)||(!groups.length&&!Array.isArray(configs)))throw Error('quota unavailable');
+      quota=groups.length?groups:quotaGroups(configs);
       quotaPlan=String(status?.userTier?.name||status?.planStatus?.planInfo?.planName||quotaPlan);quotaAt=Date.now();quotaFailed=false;
-    }catch{quotaFailed=true;}
-    showQuota();
+    }catch{
+      if(seq!==quotaSeq||!alive)return;
+      quotaFailed=true;
+    }finally{
+      clearTimeout(tmo);
+      if(seq===quotaSeq){quotaLoading=false;if(quotaAbort===ctrl)quotaAbort=null;if(alive)showQuota();}
+    }
   }
   const until=ms=>{const m=Math.max(0,Math.round((ms-Date.now())/60000)),d=Math.floor(m/1440),h=Math.floor(m%1440/60);return d?`${d}d ${h}h`:h?`${h}h ${m%60}m`:`${m}m`;};
   const clock=ms=>new Date(ms).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
@@ -142,37 +163,52 @@
   function showQuota(){
     if(!shadow)return;
     const chip=shadow.querySelector('.quota'),list=shadow.querySelector('.quota-list'),low=quota.reduce((a,g)=>!a||g.left<a.left?g:a,null);
-    chip.hidden=!prefs.quota||!low;
+    const restoreFocus=shadow.activeElement?.classList?.contains('quota-refresh');
+    chip.hidden=!prefs.quota||(!low&&!quotaFailed);
     if(chip.hidden){quotaList(false);return;}
     const pct=g=>Math.round(g.left*100)+'%',meter=(cls,g)=>{const e=make('span',{class:cls,'data-health':health(g.left),'aria-hidden':'true'});e.style.setProperty('--p',g.left*100+'%');return e;};
     const short=g=>g.name.replace(/\s+models?$/i,'').replace(/\s+and\s+/i,'/');
-    // Every group on the chip, each showing its tighter limit (weekly or 5-hour).
-    chip.replaceChildren(...quota.map(g=>{const e=make('span',{class:'quota-item','data-health':health(g.left)});e.append(meter('quota-ring',g),make('span',{class:'quota-short'},short(g)),make('span',{},pct(g)));return e;}));
-    chip.toggleAttribute('data-stale',quotaFailed);
-    chip.title=`Model quota${quotaFailed?' · offline':''}`;chip.setAttribute('aria-label','Model quota: '+quota.map(g=>`${g.name} ${pct(g)}`).join(', '));
-    // Nudge once when the lowest model first drops into the red, not on every refresh.
-    if(low.left<.2&&lastLow!==null&&lastLow>=.2&&!reduced.matches)chip.animate([{transform:'scale(1)'},{transform:'scale(1.15)'},{transform:'scale(1)'}],{duration:500,iterations:3});
-    lastLow=low.left;
+    if(low){
+      // Every group on the chip, each showing its tighter limit (weekly or 5-hour).
+      chip.replaceChildren(...quota.map(g=>{const e=make('span',{class:'quota-item','data-health':health(g.left)});e.append(meter('quota-ring',g),make('span',{class:'quota-short'},short(g)),make('span',{},pct(g)));return e;}));
+      chip.toggleAttribute('data-stale',quotaFailed);
+      chip.title=`Model quota${quotaFailed?' · offline':''}`;chip.setAttribute('aria-label','Model quota: '+quota.map(g=>`${g.name} ${pct(g)}`).join(', '));
+      // Nudge once when the lowest model first drops into the red, not on every refresh.
+      if(low.left<.2&&lastLow!==null&&lastLow>=.2&&!reduced.matches)chip.animate([{transform:'scale(1)'},{transform:'scale(1.15)'},{transform:'scale(1)'}],{duration:500,iterations:3});
+      lastLow=low.left;
+    }else{
+      chip.replaceChildren(make('span',{},'Quota offline'));
+      chip.setAttribute('data-stale','');
+      chip.title='Model quota offline (click to retry)';chip.setAttribute('aria-label','Model quota offline');
+    }
     const head=make('div',{class:'quota-head'}),refresh=make('button',{class:'tool quota-refresh',type:'button','aria-label':'Refresh model quota',title:'Refresh'},'↻');
-    head.append(make('strong',{},'Model quota'),make('span',{class:'kind'},quotaPlan),make('span',{class:'spacer'}),make('span',{class:'kind'},(quotaFailed?'Offline · ':'Updated ')+clock(quotaAt)),refresh);
+    if(quotaLoading)refresh.setAttribute('data-busy','');
+    const statusText=quotaFailed?'Offline'+(quotaAt?' · '+clock(quotaAt):''):'Updated '+clock(quotaAt);
+    head.append(make('strong',{},'Model quota'),make('span',{class:'kind'},quotaPlan),make('span',{class:'spacer'}),make('span',{class:'kind'},statusText),refresh);
     refresh.onclick=loadQuota; // rebuilt on every refresh, so no listen() bookkeeping
-    list.replaceChildren(head,...quota.flatMap(g=>[
-      make('div',g.info?{class:'quota-group',title:g.info}:{class:'quota-group'},g.name),
-      ...g.buckets.map(b=>{
-        const row=make('div',{class:'quota-row'}),bar=make('span',{class:'quota-bar'});bar.append(meter('quota-fill',b));
-        row.append(make('span',{class:'quota-name'},b.label),bar,make('span',{class:'value','data-health':health(b.left)},pct(b)),make('span',b.reset?{class:'kind',title:'Resets '+clock(b.reset)}:{class:'kind'},b.left>=1?'full':b.reset?'resets in '+until(b.reset):''));
-        return row;
-      })
-    ]));
+    if(quota.length){
+      list.replaceChildren(head,...quota.flatMap(g=>[
+        make('div',g.info?{class:'quota-group',title:g.info}:{class:'quota-group'},g.name),
+        ...g.buckets.map(b=>{
+          const row=make('div',{class:'quota-row'}),bar=make('span',{class:'quota-bar'});bar.append(meter('quota-fill',b));
+          row.append(make('span',{class:'quota-name'},b.label),bar,make('span',{class:'value','data-health':health(b.left)},pct(b)),make('span',b.reset?{class:'kind',title:'Resets '+clock(b.reset)}:{class:'kind'},b.left>=1?'full':b.reset?'resets in '+until(b.reset):''));
+          return row;
+        })
+      ]));
+    }else{
+      list.replaceChildren(head,make('div',{class:'quota-empty kind'},'Could not reach language server. Click ↻ to retry.'));
+    }
+    if(restoreFocus&&!list.hidden)refresh.focus({preventScroll:true});
     positionTrigger();
   }
-  function quotaList(value){const list=shadow?.querySelector('.quota-list');if(!list)return;list.hidden=!value;shadow.querySelector('.quota').setAttribute('aria-expanded',String(value));if(value)positionTrigger();}
+  function quotaList(value){const list=shadow?.querySelector('.quota-list');if(!list)return;if(value&&open)toggle(false,false);list.hidden=!value;shadow.querySelector('.quota').setAttribute('aria-expanded',String(value));if(value)positionTrigger();}
   const make=(tag,attrs={},text='')=>{const e=document.createElement(tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);if(text)e.textContent=text;return e;};
   function listen(e,name,fn,options){e.addEventListener(name,fn,options);cleanups.push(()=>e.removeEventListener(name,fn,options));}
-  function save(){const value=JSON.stringify(prefs);saveQueue=saveQueue.catch(()=>{}).then(()=>native?native.save(value):localStorage.setItem(KEY,value)).catch(()=>{shadow.querySelector('.status').textContent='Could not save this theme. Please try again.';});}
+  function save(){const value=JSON.stringify(prefs),err=shadow?.querySelector('.save-error'),tr=shadow?.querySelector('.trigger');saveQueue=saveQueue.catch(()=>{}).then(()=>native?native.save(value):localStorage.setItem(KEY,value)).then(()=>{if(err){err.hidden=true;err.textContent='';}if(tr){tr.removeAttribute('data-save-error');tr.title=triggerTitle;}}).catch(()=>{const msg='Could not save this theme. Please try again.';if(err){err.textContent=msg;err.hidden=false;}if(tr){tr.setAttribute('data-save-error','');tr.title=msg;}const st=shadow?.querySelector('.status');if(st)st.textContent=msg;});}
   const paletteIcon='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="16" cy="9" r="1.5"/></svg>';
   const closeIcon='<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>';
   const isMac=typeof navigator!=='undefined'&&(/(Mac|iPhone|iPad|iPod)/i.test(navigator.platform||'')||/Mac/i.test(navigator.userAgent||''));
+  const triggerTitle='Themes · '+(isMac?'⌥⌘W':'Ctrl+Alt+W');
   function build(){
     host=make('div',{id:'agy-ascii-controls'});if(isMac)host.setAttribute('data-platform','darwin');host.style.visibility='hidden';document.body.append(host);shadow=host.attachShadow({mode:'open'});
     const css=make('style');css.textContent=`
@@ -180,16 +216,16 @@
       *{box-sizing:border-box}button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:2px solid var(--aw-accent);outline-offset:3px}button:disabled{opacity:.45;cursor:default}[hidden]{display:none!important}
       .trigger{position:fixed;top:5px;right:155px;pointer-events:auto;-webkit-app-region:no-drag;display:flex;align-items:center;gap:6px;height:25px;padding:0 9px;border:1px solid transparent;border-radius:5px;color:var(--aw-fg);background:transparent;font-size:11px}
       :host([data-platform=darwin]) .trigger{right:200px}
-      .trigger:hover,.trigger[aria-expanded=true]{background:color-mix(in srgb,var(--aw-fg) 10%,transparent)}
+      .trigger:hover,.trigger[aria-expanded=true]{background:color-mix(in srgb,var(--aw-fg) 10%,transparent)}.trigger[data-save-error]{color:color-mix(in srgb,#ff5f5f 85%,var(--aw-fg))}
       [data-health=ok]{--c:var(--aw-accent)}[data-health=warn]{--c:color-mix(in srgb,#f0a83a 80%,var(--aw-fg))}[data-health=low]{--c:color-mix(in srgb,#ff5f5f 85%,var(--aw-fg))}
-      .quota{position:fixed;top:5px;right:240px;pointer-events:auto;-webkit-app-region:no-drag;display:flex;align-items:center;gap:12px;height:25px;padding:0 8px;border:1px solid transparent;border-radius:5px;color:var(--aw-fg);background:transparent;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+      .quota{position:fixed;top:5px;right:240px;max-width:min(360px,calc(100vw - 260px));overflow:hidden;pointer-events:auto;-webkit-app-region:no-drag;display:flex;align-items:center;gap:12px;height:25px;padding:0 8px;border:1px solid transparent;border-radius:5px;color:var(--aw-fg);background:transparent;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
       .quota:hover,.quota[aria-expanded=true]{background:color-mix(in srgb,var(--aw-fg) 10%,transparent)}.quota[data-stale]{opacity:.55}
       .quota-item{display:flex;align-items:center;gap:5px}.quota-item[data-health=low]{color:var(--c)}.quota-short{color:var(--aw-muted)}
       @media(max-width:1000px){.quota-short{display:none}.quota{gap:8px}}
       .quota-ring{width:13px;height:13px;border-radius:50%;background:conic-gradient(var(--c) var(--p),color-mix(in srgb,var(--aw-fg) 20%,transparent) 0);-webkit-mask:radial-gradient(circle,transparent 3.5px,#000 4px);mask:radial-gradient(circle,transparent 3.5px,#000 4px)}
-      .quota-list{position:fixed;pointer-events:auto;-webkit-app-region:no-drag;display:grid;grid-template-columns:auto 96px auto auto;gap:7px 12px;align-items:center;min-width:300px;padding:10px 12px 12px;border:1px solid var(--aw-border);border-radius:8px;background:var(--aw-panel);color:var(--aw-fg);box-shadow:0 6px 20px #0000001a;font-size:11px;white-space:nowrap}
+      .quota-list{position:fixed;pointer-events:auto;-webkit-app-region:no-drag;display:grid;grid-template-columns:auto 96px auto auto;gap:7px 12px;align-items:center;min-width:300px;max-width:calc(100vw - 16px);overflow-x:auto;padding:10px 12px 12px;border:1px solid var(--aw-border);border-radius:8px;background:var(--aw-panel);color:var(--aw-fg);box-shadow:0 6px 20px #0000001a;font-size:11px;white-space:nowrap}
       .quota-head{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-bottom:3px;font-size:12px}.quota-head strong{font-weight:600}.quota-refresh{font-size:13px}.quota-refresh[data-busy]{opacity:.5}
-      .quota-group{grid-column:1/-1;margin-top:4px;font-weight:600}.quota-row .quota-name{padding-left:10px;color:var(--aw-muted)}
+      .quota-group{grid-column:1/-1;margin-top:4px;font-weight:600}.quota-row .quota-name{padding-left:10px;color:var(--aw-muted)}.quota-empty{grid-column:1/-1;color:var(--aw-muted);padding:4px 0}
       .quota-row{display:contents}.quota-row .value{text-align:right;font-variant-numeric:tabular-nums}.quota-row .value[data-health=low]{color:var(--c)}
       .quota-bar{height:6px;border-radius:3px;background:color-mix(in srgb,var(--aw-fg) 14%,transparent);overflow:hidden}.quota-fill{display:block;height:100%;width:var(--p);border-radius:inherit;background:var(--c)}
       .panel{position:fixed;top:44px;right:8px;bottom:8px;width:min(340px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px;pointer-events:auto;-webkit-app-region:no-drag;padding:12px;border:1px solid var(--aw-border);border-radius:10px;background:color-mix(in srgb,var(--aw-panel) 94%,transparent);backdrop-filter:blur(18px);color:var(--aw-fg);box-shadow:0 12px 40px #00000030}
@@ -206,11 +242,10 @@
       .choice[aria-pressed=true] .preview{box-shadow:0 0 0 2px var(--aw-panel),0 0 0 4px var(--aw-accent)}
       .name{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:1.2}.name span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.name .kind{font-size:10px}
       .empty{grid-column:1/-1;padding:24px 0;text-align:center;color:var(--aw-muted);font-size:12px}
-      .settings{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 2px 0;border-top:1px solid color-mix(in srgb,var(--aw-border) 60%,transparent);font-size:11px;color:var(--aw-muted)}.settings label{display:flex;align-items:center;gap:6px;white-space:nowrap}.settings input[type=range]{width:110px;accent-color:var(--aw-fg)}.settings input[type=checkbox]{margin:0;accent-color:var(--aw-fg)}.settings select{height:22px;padding:0 6px;border:1px solid var(--aw-border);border-radius:4px;background:var(--aw-card);color:var(--aw-fg);font:inherit;cursor:pointer}.settings select:focus-visible{outline:2px solid var(--aw-accent);outline-offset:2px}.value{font-variant-numeric:tabular-nums;min-width:28px}.status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+      .settings{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 2px 0;border-top:1px solid color-mix(in srgb,var(--aw-border) 60%,transparent);font-size:11px;color:var(--aw-muted)}.settings label{display:flex;align-items:center;gap:6px;white-space:nowrap}.settings input[type=range]{width:110px;accent-color:var(--aw-fg)}.settings input[type=checkbox]{margin:0;accent-color:var(--aw-fg)}.settings select{height:22px;padding:0 6px;border:1px solid var(--aw-border);border-radius:4px;background:var(--aw-card);color:var(--aw-fg);font:inherit;cursor:pointer}.settings select:focus-visible{outline:2px solid var(--aw-accent);outline-offset:2px}.value{font-variant-numeric:tabular-nums;min-width:28px}.save-error{padding:6px 8px;border:1px solid color-mix(in srgb,#ff5f5f 55%,transparent);border-radius:6px;background:color-mix(in srgb,#ff5f5f 14%,transparent);color:var(--aw-fg);font-size:11px}.status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
       @media(max-width:650px){.trigger span{display:none}.trigger{right:145px}.settings input[type=range]{width:100px}}
       @media(prefers-reduced-motion:reduce){.preview{transition:none}.panel:not([hidden]){animation:none}}
     `;shadow.append(css);
-    const triggerTitle='Themes · '+(isMac?'⌥⌘W':'Ctrl+Alt+W');
     const trigger=make('button',{class:'trigger',type:'button','aria-label':'Choose theme','aria-expanded':'false','aria-controls':'theme-picker',title:triggerTitle});trigger.innerHTML=paletteIcon+'<span>Themes</span>';
     const panel=make('aside',{class:'panel',id:'theme-picker','aria-label':'ASCII wallpaper themes',hidden:''});
     const header=make('div',{class:'header'});header.append(make('strong',{},'Themes'),make('span',{class:'count'},String(themes.length)),make('span',{class:'spacer'}));
@@ -248,7 +283,7 @@
     const reactive=make('label',{title:'Speed up while agents run and ripple when one finishes'},'React to agents'),reactiveBox=make('input',{type:'checkbox',class:'reactive'});reactive.prepend(reactiveBox);
     const quotaPref=make('label',{title:'Show remaining model quota in the title bar'},'Show quota'),quotaBox=make('input',{type:'checkbox',class:'quota-pref'});quotaPref.prepend(quotaBox);
     adjust.append(intensity,make('span',{class:'value'}),glyphLabel,scaleLabel,make('span',{class:'spacer'}),recolor,reactive,quotaPref);
-    panel.append(choices,adjust,make('div',{class:'status','aria-live':'polite'}));
+    panel.append(choices,adjust,make('div',{class:'save-error',role:'alert',hidden:''}),make('div',{class:'status','aria-live':'polite'}));
     const quotaChip=make('button',{class:'quota',type:'button','aria-expanded':'false','aria-controls':'quota-list',hidden:''}),quotaPanel=make('section',{class:'quota-list',id:'quota-list','aria-label':'Model quota',hidden:''});
     shadow.append(trigger,panel,quotaChip,quotaPanel);
     listen(quotaChip,'click',()=>{quotaList(quotaPanel.hidden);if(!quotaPanel.hidden)loadQuota();});
@@ -265,17 +300,17 @@
     listen(choices,'keydown',e=>{const all=[...choices.querySelectorAll('.choice:not([hidden])')],i=all.indexOf(e.target.closest('.choice'));if(i<0)return;let next=i;if(e.key==='ArrowRight')next=Math.min(all.length-1,i+1);else if(e.key==='ArrowLeft')next=Math.max(0,i-1);else if(e.key==='ArrowDown')next=Math.min(all.length-1,i+2);else if(e.key==='ArrowUp'){if(i<2){e.preventDefault();search.focus();return;}next=i-2;}else if(e.key==='Home')next=0;else if(e.key==='End')next=all.length-1;else return;e.preventDefault();all[next].focus();all[next].scrollIntoView({block:'nearest'});select(all[next].dataset.theme);});
     listen(document,'pointerdown',e=>{if(e.composedPath().includes(host))return;if(open)toggle(false,false);quotaList(false);});
     listen(document,'keydown',e=>{
-      if((e.ctrlKey||e.metaKey)&&e.altKey&&e.code==='KeyW'){e.preventDefault();toggle(!open);}
+      if((e.ctrlKey||e.metaKey)&&e.altKey&&e.code==='KeyW'){e.preventDefault();e.stopPropagation();toggle(!open);}
       if(e.key==='Escape'&&!quotaPanel.hidden){e.preventDefault();quotaList(false);quotaChip.focus();}
-      if(e.key==='Escape'&&open){e.preventDefault();e.stopPropagation();toggle(false);}
-      const editor=e.target.closest?.('[contenteditable=true],textarea');
+      else if(e.key==='Escape'&&open){e.preventDefault();e.stopPropagation();toggle(false);}
+      const editor=e.target?.closest?.('[contenteditable=true],textarea');
       if(e.key==='Enter'&&!e.shiftKey&&editor){
-        const text=(editor.value??editor.textContent).trim(),quotaCommand=/^\/quota$/i.test(text)&&prefs.quota&&quota.length;
+        const text=(editor.value??editor.textContent).trim(),quotaCommand=/^\/quota$/i.test(text)&&prefs.quota;
         const match=quotaCommand?[text]:text.match(/^\/themes?(?:\s+(.+))?$/i);
         if(match){
           e.preventDefault();e.stopImmediatePropagation();
           if(editor.matches('textarea')){const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(editor,'');editor.dispatchEvent(new Event('input',{bubbles:true}));}
-          else{const range=document.createRange();range.selectNodeContents(editor);const sel=getSelection();sel.removeAllRanges();sel.addRange(range);document.execCommand('delete');}
+          else{const range=document.createRange?.(),sel=getSelection?.();if(range&&sel){range.selectNodeContents(editor);sel.removeAllRanges();sel.addRange(range);}document.execCommand?.('delete');}
           const arg=match[1]?.trim().toLowerCase();
           if(quotaCommand){quotaList(true);loadQuota();}
           else if(!arg)toggle(true);
@@ -286,26 +321,35 @@
       }
     },true);
   }
-  function toggle(value,focus=true){open=value;shadow.querySelector('.panel').hidden=!open;shadow.querySelector('.trigger').setAttribute('aria-expanded',String(open));syncLayout();if(open){const b=shadow.querySelector(`[data-theme="${prefs.theme==='off'?'clouds':prefs.theme}"]`);b?.focus({preventScroll:true});b?.scrollIntoView({block:'nearest',inline:'center'});previews(true);}else if(focus)shadow.querySelector('.trigger').focus();}
+  function toggle(value,focus=true){open=value;if(open)quotaList(false);shadow.querySelector('.panel').hidden=!open;shadow.querySelector('.trigger').setAttribute('aria-expanded',String(open));syncLayout();if(open){const active=shadow.querySelector(`[data-theme="${prefs.theme==='off'?'clouds':prefs.theme}"]`),target=active&&!active.hidden?active:shadow.querySelector('.choice:not([hidden])')||shadow.querySelector('.search');target?.focus({preventScroll:true});if(target?.classList?.contains('choice'))target.scrollIntoView({block:'nearest',inline:'center'});previews(true);}else{stopPreviews();if(focus)shadow.querySelector('.trigger').focus();}}
   function select(id){prefs.theme=id;apply();save();}
   function label(t=prefs.theme==='off'?null:current()){shadow.querySelector('.current').textContent=t?t.name:'Original';shadow.querySelector('.kind').textContent=t?(t.light?'Light':'Dark'):'Antigravity';}
   function positionTrigger(){
     if(!shadow)return;
     const trigger=shadow.querySelector('.trigger');
     if(!trigger)return;
-    const candidates=document.querySelectorAll('button, a, [role="button"], div');
-    let anchor=null;
-    for(const el of candidates){
-      if(/Open\s+IDE/i.test(el.textContent||'')&&(el.textContent||'').trim().length<30){
-        const r=el.getBoundingClientRect();
-        if(r.top>=0&&r.top<60&&r.left>50&&r.width>10&&r.height>10){
-          anchor=el.closest('button, a, [role="button"]')||el;
-          break;
+    let anchor=triggerAnchor?.isConnected&&/Open\s+IDE/i.test(triggerAnchor.textContent||'')&&(triggerAnchor.textContent||'').trim().length<30?triggerAnchor:null,r=null;
+    if(anchor){
+      r=anchor.getBoundingClientRect();
+      if(!(r.top>=0&&r.top<60&&r.left>50&&r.width>10&&r.height>10)){anchor=null;r=null;}
+    }
+    if(!anchor){
+      const topBar=document.querySelector('.agy-shell > .shrink-0');
+      const findIn=(root,sel)=>{
+        for(const el of root.querySelectorAll(sel)){
+          const txt=el.textContent||'';
+          if(/Open\s+IDE/i.test(txt)&&txt.trim().length<30){
+            const er=el.getBoundingClientRect();
+            if(er.top>=0&&er.top<60&&er.left>50&&er.width>10&&er.height>10)return el.closest('button, a, [role="button"]')||el;
+          }
         }
-      }
+        return null;
+      };
+      anchor=(topBar?findIn(topBar,'button, a, [role="button"]'):null)||findIn(document,'button, a, [role="button"]')||(topBar?findIn(topBar,'div'):null);
+      triggerAnchor=anchor;
     }
     if(anchor){
-      const r=anchor.getBoundingClientRect();
+      r=r||anchor.getBoundingClientRect();
       trigger.style.right=Math.round(window.innerWidth-r.left+8)+'px';
       const targetTop=Math.round(r.top+(r.height-25)/2);
       if(targetTop>=0&&targetTop<40)trigger.style.top=targetTop+'px';
@@ -315,13 +359,14 @@
     }
     const chip=shadow.querySelector('.quota'),list=shadow.querySelector('.quota-list');
     if(chip&&!chip.hidden){
-      const r=trigger.getBoundingClientRect();chip.style.top=Math.round(r.top)+'px';chip.style.right=Math.round(innerWidth-r.left+4)+'px';
-      const c=chip.getBoundingClientRect();list.style.top=Math.round(c.bottom+6)+'px';list.style.right=Math.max(8,Math.round(innerWidth-c.right))+'px';
+      const vw=window.innerWidth||1200,r=trigger.getBoundingClientRect();chip.style.top=Math.round(r.top)+'px';chip.style.right=Math.round(vw-r.left+4)+'px';
+      const c=chip.getBoundingClientRect(),listW=Math.max(list.getBoundingClientRect?.().width||0,300);
+      list.style.top=Math.round(c.bottom+6)+'px';list.style.right=Math.min(Math.max(8,Math.round(vw-c.right)),Math.max(8,Math.round(vw-Math.min(listW,vw-16)-8)))+'px';
     }
   }
-  function syncLayout(){
+  function syncLayout(skipRender=false){
     positionTrigger();
-    const target=shell||sheet;if(!host||!target)return;
+    const target=shell||sheet;if(!host||!target||!target.isConnected)return;
     const bounds=target.getBoundingClientRect();
     const sheetEl=document.querySelector('.agy-sheet')||target;
     const composerElement=sheetEl.querySelector('.surface-composer'),composer=composerElement?.getBoundingClientRect();
@@ -331,24 +376,50 @@
     const topBar=document.querySelector('.agy-shell > .shrink-0');
     const topHeight=Math.round(topBar?.getBoundingClientRect().height||38);
     const next=column?.width?{l:Math.round(column.left-bounds.left),r:Math.round(column.right-bounds.left),t:topHeight}:{l:-1,r:-1,t:topHeight};
-    if(next?.l!==calmBox?.l||next?.r!==calmBox?.r||next?.t!==calmBox?.t){calmBox=next;render();}
+    if(next?.l!==calmBox?.l||next?.r!==calmBox?.r||next?.t!==calmBox?.t){calmBox=next;if(!skipRender)render();}
     // The picker is a sidebar docked to the right, just under the titlebar.
     shadow.querySelector('.panel').style.top=(topHeight+6)+'px';
   }
   function setMode(t,off){
+    for(const e of modeNodes.keys())if(!e.isConnected)modeNodes.delete(e);
+    needsModeSync=false;
     const names=['dark','light','dark-theme','light-theme','theme-dark','theme-light'];
     if(off){for(const [e,old]of modeNodes){if(e.isConnected){e.classList.remove(...names);e.classList.add(...old);}}modeNodes.clear();return;}
     const nodes=[document.body,...document.querySelectorAll('#root .dark,#root .light')];
     for(const e of nodes){if(!modeNodes.has(e))modeNodes.set(e,names.filter(c=>e.classList.contains(c)));e.classList.remove(...names);e.classList.add(t.light?'light':'dark');if(e===document.body)e.classList.add(t.light?'light-theme':'dark-theme',t.light?'theme-light':'theme-dark');}
+  }
+  function hostIsLight(){
+    if(shell?.closest?.('.light'))return true;
+    const hasLight=!!document.querySelector('#root .light'),hasDark=!!document.querySelector('#root .dark');
+    if(hasLight&&!hasDark)return true;
+    if(hasDark&&!hasLight)return false;
+    const bg=getComputedStyle(shell||document.body).getPropertyValue('--background').trim();
+    const m=bg.match(/^#([0-9a-f]{3,8})$/i);
+    if(m){let h=m[1];if(h.length===3)h=h.replace(/./g,c=>c+c);if(h.length>=6){const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (0.299*r+0.587*g+0.114*b)>128;}}
+    const rgb=bg.match(/rgb\w*\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i);
+    if(rgb)return (0.299*rgb[1]+0.587*rgb[2]+0.114*rgb[3])>128;
+    return false;
+  }
+  function hostPalette(off,t){
+    if(!off)return t;
+    return hostIsLight()?{panel:'#ffffff',card:'#f4f4f5',fg:'#18181b',muted:'#52525b',border:'#d4d4d8',accent:'#2563eb'}:{panel:'#18181b',card:'#27272a',fg:'#f4f4f5',muted:'#a1a1aa',border:'#3f3f46',accent:'#60a5fa'};
+  }
+  function sampleChrome(){
+    const el=document.querySelector('.agy-shell');
+    if(!el||originalChromeCaptured)return;
+    const c=getComputedStyle(el),light=hostIsLight();
+    originalChrome={color:c.getPropertyValue('--background').trim()||(light?'#ffffff':'#101010'),symbolColor:c.getPropertyValue('--foreground').trim()||(light?'#1f2328':'#cccccc')};
+    originalChromeCaptured=true;
   }
   function appearance(t,off){
     const full=!off&&prefs.recolor;
     setMode(t,!full);
     const viewerReset=`
       body[data-aw-theme] .surface-composer,body[data-aw-theme] iframe,body[data-aw-theme] embed,body[data-aw-theme] object,body[data-aw-theme] .pdfViewer,body[data-aw-theme] .textLayer,body[data-aw-theme] [class*="pdf" i],body[data-aw-theme] [class*="pdf" i] *,body[data-aw-theme] .monaco-editor,body[data-aw-theme] .monaco-editor *,body[data-aw-theme] [class*="artifact" i],body[data-aw-theme] [class*="artifact" i] *,body[data-aw-theme] .markdown-body,body[data-aw-theme] .prose{text-shadow:none!important}
-      body[data-aw-theme] iframe,body[data-aw-theme] embed,body[data-aw-theme] object,body[data-aw-theme] .pdfViewer,body[data-aw-theme] [class*="pdf" i],body[data-aw-theme] [class*="artifact" i]{isolation:isolate;color:initial}
+      body[data-aw-theme] iframe,body[data-aw-theme] embed,body[data-aw-theme] object,body[data-aw-theme] .pdfViewer,body[data-aw-theme] [class*="pdf" i]{isolation:isolate;color:initial}
+      body[data-aw-theme] [class*="artifact" i]{isolation:isolate}
     `;
-    if(off){delete document.body.dataset.awTheme;delete document.body.dataset.awMode;style.textContent='';host.style.colorScheme='normal';}
+    if(off){delete document.body.dataset.awTheme;delete document.body.dataset.awMode;style.textContent='';host.style.colorScheme=hostIsLight()?'light':'dark';}
     else if(!full){
       document.body.dataset.awTheme=t.id;delete document.body.dataset.awMode;host.style.colorScheme=t.light?'light':'dark';
       style.textContent=`
@@ -361,12 +432,12 @@
         body[data-aw-theme] .agy-shell > .shrink-0{position:relative!important;z-index:30!important;background-color:color-mix(in srgb,${t.chrome} 30%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;border-bottom:0!important}
         body[data-aw-theme] .agy-user-bubble{color:var(--foreground);text-shadow:none}
         body[data-aw-theme] .agy-sidebar-row{--row-bg:transparent!important}
-        body[data-aw-theme] .agy-sidebar-row:hover:not(.bg-sidebar-secondary){background-color:rgba(255,255,255,0.07)!important}
+        body[data-aw-theme] .agy-sidebar-row:hover:not(.bg-sidebar-secondary){background-color:color-mix(in srgb,${t.fg} 7%,transparent)!important}
         body[data-aw-theme] .agy-sidebar-row.bg-sidebar-secondary,body[data-aw-theme] .agy-sidebar-row[data-active="true"]{background-color:color-mix(in srgb,${t.accent} 20%,${t.panel})!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;border:1px solid color-mix(in srgb,${t.accent} 35%,transparent)!important;box-shadow:0 2px 10px rgba(0,0,0,0.2)!important}
         body[data-aw-theme] :is(.agy-sidebar-row,[data-testid="conversation-row-history"]) .agy-row-actions::before{display:none!important;background:transparent!important}
         body[data-aw-theme] :is(.agy-sidebar-row,[data-testid="conversation-row-history"]) .agy-row-actions{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;right:6px!important;gap:2px!important}
         body[data-aw-theme] .agy-row-actions button{border-radius:6px!important;background:transparent!important;transition:background .12s ease,color .12s ease}
-        body[data-aw-theme] .agy-row-actions button:hover{background:rgba(255,255,255,0.16)!important;color:#fff!important}
+        body[data-aw-theme] .agy-row-actions button:hover{background:color-mix(in srgb,${t.fg} 14%,transparent)!important;color:${t.fg}!important}
         body[data-aw-theme] .agy-sidebar-row:hover > div:nth-child(2),body[data-aw-theme] .agy-sidebar-row.bg-sidebar-secondary > div:nth-child(2),body[data-aw-theme] .agy-sidebar-row[data-active="true"] > div:nth-child(2){padding-right:76px!important;transition:padding-right .15s ease-out}
         body[data-aw-theme] .surface-opaque,body[data-aw-theme] .border-menu-border,body[data-aw-theme] [role="menu"],body[data-aw-theme] [data-radix-menu-content]{background-color:color-mix(in srgb,${t.panel} 88%,transparent)!important;backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;border:1px solid color-mix(in srgb,${t.border} 45%,transparent)!important;box-shadow:0 12px 36px rgba(0,0,0,0.45)!important;border-radius:8px!important}
         body[data-aw-theme] .agy-sheet [class*="pt-[30vh]"]{padding-top:0!important;justify-content:flex-end!important;padding-bottom:24px!important}
@@ -391,17 +462,17 @@
         body[data-aw-theme] .agy-inset-shell > div:first-child > div:first-child,body[data-aw-theme] [aria-label="Sidebar"],body[data-aw-theme] nav.bg-sidebar{background-color:color-mix(in srgb,${t.chrome} 30%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;border-right:1px solid color-mix(in srgb,${t.border} 30%,rgba(255,255,255,0.08))!important}
         body[data-aw-theme] .agy-shell > .shrink-0{position:relative!important;z-index:30!important;background-color:color-mix(in srgb,${t.chrome} 30%,transparent)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;border-bottom:0!important}
         body[data-aw-theme] .agy-sidebar-row{--row-bg:transparent!important}
-        body[data-aw-theme] .agy-sidebar-row:hover:not(.bg-sidebar-secondary){background-color:rgba(255,255,255,0.07)!important}
+        body[data-aw-theme] .agy-sidebar-row:hover:not(.bg-sidebar-secondary){background-color:color-mix(in srgb,${t.fg} 7%,transparent)!important}
         body[data-aw-theme] .agy-sidebar-row.bg-sidebar-secondary,body[data-aw-theme] .agy-sidebar-row[data-active="true"]{background-color:color-mix(in srgb,${t.accent} 20%,${t.panel})!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;border:1px solid color-mix(in srgb,${t.accent} 35%,transparent)!important;box-shadow:0 2px 10px rgba(0,0,0,0.2)!important}
         body[data-aw-theme] :is(.agy-sidebar-row,[data-testid="conversation-row-history"]) .agy-row-actions::before{display:none!important;background:transparent!important}
         body[data-aw-theme] :is(.agy-sidebar-row,[data-testid="conversation-row-history"]) .agy-row-actions{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;right:6px!important;gap:2px!important}
         body[data-aw-theme] .agy-row-actions button{border-radius:6px!important;background:transparent!important;transition:background .12s ease,color .12s ease}
-        body[data-aw-theme] .agy-row-actions button:hover{background:rgba(255,255,255,0.16)!important;color:#fff!important}
+        body[data-aw-theme] .agy-row-actions button:hover{background:color-mix(in srgb,${t.fg} 14%,transparent)!important;color:${t.fg}!important}
         body[data-aw-theme] .agy-sidebar-row:hover > div:nth-child(2),body[data-aw-theme] .agy-sidebar-row.bg-sidebar-secondary > div:nth-child(2),body[data-aw-theme] .agy-sidebar-row[data-active="true"] > div:nth-child(2){padding-right:76px!important;transition:padding-right .15s ease-out}
         body[data-aw-theme] .surface-opaque,body[data-aw-theme] .border-menu-border,body[data-aw-theme] [role="menu"],body[data-aw-theme] [data-radix-menu-content]{background-color:color-mix(in srgb,${t.panel} 88%,transparent)!important;backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;border:1px solid color-mix(in srgb,${t.border} 45%,transparent)!important;box-shadow:0 12px 36px rgba(0,0,0,0.45)!important;border-radius:8px!important}
         body[data-aw-theme] .agy-sheet [class*="pt-[30vh]"]{padding-top:0!important;justify-content:flex-end!important;padding-bottom:24px!important}
         @media(max-width:900px){body[data-aw-theme] .agy-shell{--max-conversation-width:100%!important}}
-        body[data-aw-theme] .agy-sheet{text-shadow:0 0 2px ${t.light?t.floor:t.sky},0 0 6px ${t.light?t.floor:t.sky},0 0 12px ${t.light?t.floor:t.sky}}body[data-aw-theme] .surface-composer{text-shadow:none}
+        body[data-aw-theme] .agy-sheet{text-shadow:0 0 2px ${t.light?t.floor:t.sky},0 0 6px ${t.light?t.floor:t.sky},0 0 12px ${t.light?t.floor:t.sky}}body[data-aw-theme] .surface-composer{text-shadow:none}body[data-aw-theme] .agy-user-bubble{color:var(--foreground);text-shadow:none}
         body[data-aw-theme] .md-sticky-message-bleed,body[data-aw-theme] .md-sticky-message-bleed::before,body[data-aw-theme] .md-sticky-message-bleed::after{background:transparent!important}
         body[data-aw-theme] .agy-sheet [class*=bottom-0][class*=pointer-events-none]{background-image:none!important}
         body[data-aw-theme] .agy-sheet[data-sheet-inset] [data-main-content-body],body[data-aw-theme] .agy-inset-shell [data-side-panel-body]{background-color:transparent!important}
@@ -413,8 +484,9 @@
         ${viewerReset}
       `;
     }
-    for(const k of ['panel','card','fg','muted','border','accent'])host.style.setProperty('--aw-'+k,t[k]);
-    const colors=full?{color:'#00000000',symbolColor:t.fg}:originalChrome;
+    const ui=hostPalette(off,t);
+    for(const k of ['panel','card','fg','muted','border','accent'])host.style.setProperty('--aw-'+k,ui[k]);
+    const colors=!off?{color:'#00000000',symbolColor:t.fg}:originalChrome;
     if(colors)windowAPI?.setTitleBarOverlay(colors)?.catch?.(()=>{});
   }
   function apply(){
@@ -432,14 +504,35 @@
   function mount(){
     const target=document.querySelector('.agy-shell')||document.querySelector('.agy-sheet');if(!target)return;host.style.visibility='visible';
     sheet=document.querySelector('.agy-sheet');
-    if(shell!==target||!canvas?.isConnected){resizeObserver?.disconnect();canvas?.remove();shell=target;canvas=make('canvas',{id:'agy-ascii-scene','aria-hidden':'true'});Object.assign(canvas.style,{position:'absolute',inset:'0',width:'100%',height:'100%',zIndex:'-1',pointerEvents:'none'});shell.prepend(canvas);ctx=canvas.getContext('2d',{alpha:false});resizeObserver=new ResizeObserver(()=>{resize();render();syncLayout();});resizeObserver.observe(shell);resize();apply();}
-    else{syncLayout();}
+    if(shell!==target||!canvas?.isConnected){resizeObserver?.disconnect();cancelAnimationFrame(resizeRaf);resizeRaf=0;canvas?.remove();shell=target;sampleChrome();canvas=make('canvas',{id:'agy-ascii-scene','aria-hidden':'true'});Object.assign(canvas.style,{position:'absolute',inset:'0',width:'100%',height:'100%',zIndex:'-1',pointerEvents:'none'});shell.prepend(canvas);ctx=canvas.getContext('2d',{alpha:false});resizeObserver=new ResizeObserver(()=>{if(!resizeRaf)resizeRaf=requestAnimationFrame(()=>{resizeRaf=0;if(!alive)return;resize();syncLayout(true);render();});});resizeObserver.observe(shell);resize();apply();}
+    else{if(needsModeSync&&prefs.theme!=='off'&&prefs.recolor)setMode(current(),false);else needsModeSync=false;syncLayout();}
   }
   function resize(){const target=shell||sheet;if(!target)return;const r=target.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,1.5);sceneWidth=r.width;sceneHeight=r.height;canvas.width=Math.round(r.width*d);canvas.height=Math.round(r.height*d);ctx.setTransform(d,0,0,d,0,0);}
   function render(){if(ctx&&canvas&&!canvas.hidden){drawAsciiScene(ctx,sceneWidth,sceneHeight,current(),time,.35+.65*prefs.intensity/100,calmBox,{energy,pulse,glyphs:prefs.glyphs,scale:prefs.scale});}}
-  function previews(all=false){if(!shadow||!open)return;for(const t of themes){if(!all&&t.id!==prefs.theme)continue;const c=shadow.querySelector(`[data-theme="${t.id}"] canvas`);if(c.parentNode.hidden)continue;drawAsciiScene(c.getContext('2d'),c.width,c.height,t,time,1,null,{glyphs:prefs.glyphs});}}
-  function schedule(){cancelAnimationFrame(raf);raf=0;last=performance.now();if(alive&&!document.hidden&&!prefs.paused&&prefs.theme!=='off')raf=requestAnimationFrame(tick);}
+  function stopPreviews(){cancelAnimationFrame(previewRaf);previewRaf=0;}
+  function drawPreview(c,t){drawAsciiScene(c.getContext('2d'),c.width,c.height,t,time,1,null,{glyphs:prefs.glyphs});c.dataset.previewKey=prefs.glyphs;}
+  function previews(all=false){
+    if(!shadow||!open)return;
+    if(!all){if(prefs.theme==='off')return;const t=current(),c=shadow.querySelector(`[data-theme="${t.id}"] canvas`);if(c&&!c.parentNode.hidden)drawPreview(c,t);return;}
+    stopPreviews();
+    const queue=[];
+    for(const t of themes){
+      const c=shadow.querySelector(`[data-theme="${t.id}"] canvas`);
+      if(!c||c.parentNode.hidden||c.dataset.previewKey===prefs.glyphs)continue;
+      if(t.id===prefs.theme)drawPreview(c,t);else queue.push([c,t]);
+    }
+    if(!queue.length)return;
+    let idx=0;
+    const step=()=>{
+      previewRaf=0;if(!alive||!open||document.hidden)return;
+      for(let n=0;n<6&&idx<queue.length;){const [c,t]=queue[idx++];if(c.parentNode.hidden||c.dataset.previewKey===prefs.glyphs)continue;drawPreview(c,t);n++;}
+      if(idx<queue.length)previewRaf=requestAnimationFrame(step);
+    };
+    previewRaf=requestAnimationFrame(step);
+  }
+  function schedule(){cancelAnimationFrame(raf);raf=0;last=performance.now();if(alive&&!suspended&&!document.hidden&&!prefs.paused&&prefs.theme!=='off')raf=requestAnimationFrame(tick);}
   function tick(now){
+    if(!alive||suspended)return;
     if(now-last>=33){
       const dt=Math.min((now-last)/1000,.1);last=now;
       // Ease into and out of the working state so a quick tool call never makes the scene lurch.
@@ -450,15 +543,31 @@
     }
     raf=requestAnimationFrame(tick);
   }
-  function dispose(){alive=false;cancelAnimationFrame(raf);clearTimeout(layoutTimer);clearInterval(quotaTimer);unhookAgents?.();observer?.disconnect();resizeObserver?.disconnect();cleanups.forEach(f=>f());setMode(current(),true);delete document.body.dataset.awTheme;delete document.body.dataset.awMode;canvas?.remove();host?.remove();style?.remove();if(originalChrome)windowAPI?.setTitleBarOverlay(originalChrome)?.catch?.(()=>{});window.__agyAsciiInstalled=false;}
+  function pauseActivity(keepAlive){
+    if(keepAlive)suspended=true;else alive=false;
+    cancelAnimationFrame(raf);raf=0;cancelAnimationFrame(resizeRaf);resizeRaf=0;stopPreviews();
+    clearTimeout(layoutTimer);layoutTimer=0;clearInterval(quotaTimer);quotaTimer=0;
+    clearQuotaWork();observer?.disconnect();resizeObserver?.disconnect();
+  }
+  function resumeActivity(){
+    suspended=false;
+    observer?.observe(document.getElementById('root')||document.body,{childList:true,subtree:true});
+    if(shell?.isConnected)resizeObserver?.observe(shell);else mount();
+    if(!quotaTimer)quotaTimer=setInterval(loadQuota,60000);
+    render();syncLayout();schedule();loadQuota();
+  }
+  function dispose(){pauseActivity(false);unhookAgents?.();cleanups.forEach(f=>f());setMode(current(),true);delete document.body.dataset.awTheme;delete document.body.dataset.awMode;canvas?.remove();host?.remove();style?.remove();if(originalChrome)windowAPI?.setTitleBarOverlay(originalChrome)?.catch?.(()=>{});window.__agyAsciiInstalled=false;}
   async function start(){
-    try{const data=native?await native.get():{[KEY]:localStorage.getItem(KEY)};if(data?.[KEY])prefs=validate(JSON.parse(data[KEY]));}catch{}
-    shell=document.querySelector('.agy-shell');const computed=getComputedStyle(shell||document.body);originalChrome={color:computed.getPropertyValue('--background').trim()||'#101010',symbolColor:computed.getPropertyValue('--foreground').trim()||'#cccccc'};
-    style=make('style',{id:'agy-ascii-style'});document.head.append(style);build();mount();
-    observer=new MutationObserver(()=>{if(!layoutTimer)layoutTimer=setTimeout(()=>{layoutTimer=0;mount();},120);});observer.observe(document.getElementById('root')||document.body,{childList:true,subtree:true});
-    loadQuota();quotaTimer=setInterval(loadQuota,60000);
-    listen(window,'resize',syncLayout);listen(document,'visibilitychange',()=>{render();syncLayout();schedule();loadQuota();});listen(reduced,'change',()=>{if(reduced.matches){prefs.paused=true;apply();save();}});listen(window,'pagehide',()=>{alive=false;cancelAnimationFrame(raf);clearInterval(quotaTimer);observer?.disconnect();resizeObserver?.disconnect();});
     window.__agyAsciiDispose=dispose;
+    listen(window,'pagehide',e=>{if(!e?.persisted)dispose();else pauseActivity(true);});
+    listen(window,'pageshow',e=>{if(e?.persisted&&alive&&suspended)resumeActivity();});
+    try{const data=native?await native.get():{[KEY]:localStorage.getItem(KEY)};if(data?.[KEY])prefs=validate(JSON.parse(data[KEY]));}catch{}
+    if(!alive)return;
+    shell=document.querySelector('.agy-shell');sampleChrome();
+    style=make('style',{id:'agy-ascii-style'});document.head.append(style);build();mount();
+    observer=new MutationObserver(records=>{if(records?.some(r=>[...(r.addedNodes||[])].some(n=>n.nodeType===1)))needsModeSync=true;if(!layoutTimer)layoutTimer=setTimeout(()=>{layoutTimer=0;mount();},120);});observer.observe(document.getElementById('root')||document.body,{childList:true,subtree:true});
+    loadQuota();quotaTimer=setInterval(loadQuota,60000);
+    listen(window,'resize',syncLayout);listen(document,'visibilitychange',()=>{if(document.hidden)stopPreviews();else{render();syncLayout();loadQuota();if(open)previews(true);}schedule();});listen(reduced,'change',()=>{if(reduced.matches){prefs.paused=true;apply();save();}});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();

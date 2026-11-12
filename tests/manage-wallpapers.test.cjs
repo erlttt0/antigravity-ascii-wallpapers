@@ -606,7 +606,7 @@ function createUiHarness(initialHidden = false, opts = {}) {
   }
 
   const document = {
-    readyState: 'complete', hidden: initialHidden, scripts: [],
+    readyState: 'complete', hidden: initialHidden, scripts: opts.scripts || [], cookie: opts.cookie || '',
     documentElement: null, head: null, body: null,
     createElement: makeEl,
     createRange: opts.createRange || (() => ({ selectNodeContents() {} })),
@@ -633,7 +633,7 @@ function createUiHarness(initialHidden = false, opts = {}) {
   if (!opts.deferShell) root.append(shell);
   document.body.append(root);
 
-  const store = { 'asciiWallpaperPreferences.v1': opts.initialPrefs || '' };
+  const store = { 'asciiWallpaperPreferences.v1': opts.initialPrefs || '', ...(opts.initialStore || {}) };
   const window = {
     innerWidth: opts.innerWidth || 1200, devicePixelRatio: 1,
     self: opts.winSelf, top: opts.winTop,
@@ -677,7 +677,7 @@ function createUiHarness(initialHidden = false, opts = {}) {
   };
   new Function(...Object.keys(sandbox), asciiSource)(...Object.values(sandbox));
   return {
-    document, window, root, shell, topBar, sheet, openIdeBtn, darkExisting, makeEl, queryLogs, drawCalls, overlayCalls, timers, intervals, ipcRenderer,
+    document, window, store, root, shell, topBar, sheet, openIdeBtn, darkExisting, makeEl, queryLogs, drawCalls, overlayCalls, timers, intervals, ipcRenderer,
     setFocused(el) { focusedEl = el; },
     getObservers: () => ({ mutDisconnects, resizeDisconnects, hasMutCb: !!mutCb, rafLen: rafQueue.length, timerLen: timers.length, intervalLen: intervals.length }),
     flushRaf(now = 200) { const cur = rafQueue.splice(0); cur.forEach(x => x.cb(now)); return cur.length; },
@@ -820,7 +820,7 @@ const flushMicro = async () => { for (let i = 0; i < 32; i++) await Promise.reso
 const deferred = () => { let resolve, reject; const p = new Promise((res, rej) => { resolve = res; reject = rej; }); return { p, resolve, reject }; };
 
 async function runTrack2AsyncTests() {
-  // Test 16 (Track 2 Task 1): quota serialization, abort/timeout, 401 retry, empty summary, offline UI, /quota, focus, timer cleanup
+  // Test 16 (Track 2 Task 1): quota serialization, abort/timeout, 401 retry, empty summary, offline UI, focus, timer cleanup
   {
     let step = 0, abortedCount = 0;
     const reqs = [];
@@ -915,10 +915,9 @@ async function runTrack2AsyncTests() {
     assert.strictEqual(rpcCalls, 0, 'Non-ok token fetch must not send RPC requests with empty csrf header');
     assert.strictEqual(sr.querySelector('.quota').hidden, false, 'Initial quota failure must surface visible offline pill instead of hiding .quota');
 
-    // /quota works even when quota.length === 0
-    const comp = ui.makeEl('textarea'); comp.value = '/quota'; ui.sheet.append(comp);
-    ui.fireDoc('keydown', { key: 'Enter', shiftKey: false, target: comp });
-    assert.strictEqual(sr.querySelector('.quota-list').hidden, false, '/quota command must open quota panel even when quota is empty');
+    // Clicking offline .quota chip opens empty quota panel even when quota.length === 0
+    sr.querySelector('.quota').dispatchEvent({ type: 'click' });
+    assert.strictEqual(sr.querySelector('.quota-list').hidden, false, 'Clicking offline .quota must open quota panel even when quota is empty');
 
     mode = 'retry401';
     sr.querySelector('.quota-refresh').focus();
@@ -940,6 +939,54 @@ async function runTrack2AsyncTests() {
     await flushMicro();
     assert(sr.querySelector('.quota').getAttribute('data-stale') !== null, 'Empty RetrieveUserQuotaSummary + failed GetUserStatus must set offline state');
     assert(sr.querySelector('.quota-item') !== null, 'Empty summary + failed status must preserve previously cached quota rows');
+  }
+
+  {
+    // Antigravity 2.31.2: [REDACTED] GET /, agy_session_csrf_token 401 refresh, cookie '=' preservation, /quota disabled
+    const seenTokens = [];
+    const ui231 = createUiHarness(false, {
+      origin: 'https://127.0.0.1:43210',
+      initialStore: { agy_session_csrf_token: 'old_ls_tok' },
+      scripts: [{ textContent: 'window.__APP_CONFIG__={"csrfToken":"[REDACTED]"};' }],
+      fetch: (url, init = {}) => {
+        if (url === '/') return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"csrfToken":"[REDACTED]"}') });
+        seenTokens.push(init.headers['x-codeium-csrf-token']);
+        if (init.headers['x-codeium-csrf-token'] === 'old_ls_tok') {
+          ui231.store.agy_session_csrf_token = 'fresh_ls_tok';
+          return Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve(null) });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ response: { groups: [{ displayName: 'Gemini', buckets: [{ window: '5h', remainingFraction: 0.9, resetTime: '2026-11-12T00:00:00Z' }] }] }, userStatus: { userTier: { name: 'Pro' } } }) });
+      }
+    });
+    await flushMicro();
+    assert(!seenTokens.includes('[REDACTED]'), 'quotaToken must ignore [REDACTED] placeholders');
+    assert(seenTokens.includes('fresh_ls_tok'), 'quotaToken must retry 401 with refreshed agy_session_csrf_token');
+    assert.strictEqual(ui231.getHost().shadowRoot.querySelector('.quota').hidden, false, 'Successful quota fetch must show .quota chip');
+
+    const ce = ui231.makeEl('div');
+    ce.setAttribute('contenteditable', 'true');
+    ce.textContent = '/quota';
+    ui231.sheet.append(ce);
+    let preventedQuota = 0;
+    ui231.fireDoc('keydown', { key: 'Enter', shiftKey: false, target: ce, preventDefault() { preventedQuota++; } });
+    assert.strictEqual(preventedQuota, 0, '/quota in composer must not be intercepted');
+    assert.strictEqual(ui231.getHost().shadowRoot.querySelector('.quota-list').hidden, true, '/quota in composer must not open .quota-list');
+    ui231.window.__agyAsciiDispose();
+
+    // Cookie fallback preserving trailing '='
+    const seenCookieToks = [];
+    const uiCookie = createUiHarness(false, {
+      origin: 'https://127.0.0.1:43210',
+      cookie: 'other=1; csrfToken=tok_cookie==',
+      fetch: (url, init = {}) => {
+        if (url === '/') return Promise.reject(new Error('should not hit GET / when cookie exists'));
+        seenCookieToks.push(init.headers['x-codeium-csrf-token']);
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ response: { groups: [{ displayName: 'Gemini', buckets: [{ window: '5h', remainingFraction: 0.5, resetTime: '2026-11-12T00:00:00Z' }] }] }, userStatus: { userTier: { name: 'Pro' } } }) });
+      }
+    });
+    await flushMicro();
+    assert.strictEqual(seenCookieToks[0], 'tok_cookie==', 'document.cookie csrfToken= fallback must preserve = padding');
+    uiCookie.window.__agyAsciiDispose();
   }
 
   // Test 17 (Track 2 Task 2): delayed originalChrome capture, Off-mode host palette, !full overlay, hover/artifact/bubble CSS
@@ -1545,7 +1592,7 @@ async function runTrack2AsyncTests() {
     assert(!/No network requests\./i.test(indexHtml), 'index.html must accurately describe local 127.0.0.1 quota polling');
     assert(indexHtml.includes(`${totalThemes}`), `index.html must document ${totalThemes} themes`);
     assert(new RegExp(`${lightThemes}\\s+light,\\s*${darkThemes}\\s+dark`).test(indexHtml), `index.html must document ${lightThemes} light, ${darkThemes} dark`);
-    assert(indexHtml.includes('/quota'), 'index.html must document /quota');
+    assert(!/\/quota\b/i.test(indexHtml), 'index.html must not document removed /quota command');
     assert(indexHtml.includes('127.0.0.1'), 'index.html must describe local 127.0.0.1 quota requests');
     const reqMatches = indexHtml.match(/Node\.js<\/a>\s*18\+/g) || [];
     assert.strictEqual(reqMatches.length, 1, 'index.html Requirements paragraph must not be duplicated');
@@ -1567,7 +1614,7 @@ async function runTrack2AsyncTests() {
     for (const theme of themesList) {
       assert(readmeMd.includes(theme.name), `README.md must list theme name ${theme.name}`);
     }
-    assert(readmeMd.includes('/quota'), 'README.md must document /quota');
+    assert(!/\/quota\b/i.test(readmeMd), 'README.md must not document removed /quota command');
     assert(/## Requirements[\s\S]*Linux[\s\S]*%ProgramFiles%[\s\S]*## Install/i.test(readmeMd), 'README.md Requirements must list Linux and %ProgramFiles%');
     assert(readmeMd.includes('ANTIGRAVITY_APP_PATH'), 'README.md must document ANTIGRAVITY_APP_PATH');
 

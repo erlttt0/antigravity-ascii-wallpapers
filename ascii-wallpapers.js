@@ -120,10 +120,22 @@
     return [...groups.values()].sort((a,b)=>a.left-b.left||a.name.localeCompare(b.name));
   }
   async function quotaToken(force=false,signal){
-    const find=s=>s.match(/"csrfToken":"([^"]+)"/)?.[1]||'';
+    const prev=force?csrf:'';
+    const clean=v=>{const s=String(v||'').trim();return s&&s!=='[REDACTED]'?s:'';};
+    const find=s=>clean(String(s||'').match(/"?csrfToken"?\s*:\s*"([^"]+)"/)?.[1]);
+    const fromStore=(skip='')=>{
+      const out=[];
+      try{out.push(clean(localStorage.getItem('agy_session_csrf_token')));}catch{}
+      if(typeof document.cookie==='string')try{const hit=document.cookie.split('; ').find(x=>x.startsWith('csrfToken='));if(hit)out.push(clean(hit.slice(10)));}catch{}
+      return out.find(v=>v&&v!==skip)||'';
+    };
     if(force)csrf='';
-    if(!csrf&&!force)csrf=[...document.scripts].map(s=>find(s.textContent||'')).find(Boolean)||'';
-    if(!csrf){const r=await fetch('/',{cache:'no-store',signal});if(!r.ok)throw Error('token unavailable');csrf=find(await r.text());}
+    if(!csrf&&!force)csrf=fromStore()||[...document.scripts].map(s=>find(s.textContent)).find(Boolean)||'';
+    if(!csrf){
+      try{const r=await fetch('/',{cache:'no-store',signal});if(r.ok)csrf=find(await r.text());else if(!force)throw Error('token unavailable');}
+      catch(err){if(!force)throw err;}
+    }
+    if(!csrf&&force)csrf=fromStore(prev);
     if(!csrf)throw Error('missing csrf token');
     return csrf;
   }
@@ -303,17 +315,16 @@
       if((e.ctrlKey||e.metaKey)&&e.altKey&&e.code==='KeyW'){e.preventDefault();e.stopPropagation();toggle(!open);}
       if(e.key==='Escape'&&!quotaPanel.hidden){e.preventDefault();quotaList(false);quotaChip.focus();}
       else if(e.key==='Escape'&&open){e.preventDefault();e.stopPropagation();toggle(false);}
-      const editor=e.target?.closest?.('[contenteditable=true],textarea');
+      const editor=e.target?.closest?.('[contenteditable=true],[contenteditable=""],textarea');
       if(e.key==='Enter'&&!e.shiftKey&&editor){
-        const text=(editor.value??editor.textContent).trim(),quotaCommand=/^\/quota$/i.test(text)&&prefs.quota;
-        const match=quotaCommand?[text]:text.match(/^\/themes?(?:\s+(.+))?$/i);
+        const text=(editor.value??editor.textContent??'').replace(/[\u200B-\u200D\u2060\uFEFF]/g,'').trim();
+        const match=text.match(/^\/themes?(?:\s+(.+))?$/i);
         if(match){
           e.preventDefault();e.stopImmediatePropagation();
           if(editor.matches('textarea')){const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(editor,'');editor.dispatchEvent(new Event('input',{bubbles:true}));}
           else{const range=document.createRange?.(),sel=getSelection?.();if(range&&sel){range.selectNodeContents(editor);sel.removeAllRanges();sel.addRange(range);}document.execCommand?.('delete');}
           const arg=match[1]?.trim().toLowerCase();
-          if(quotaCommand){quotaList(true);loadQuota();}
-          else if(!arg)toggle(true);
+          if(!arg)toggle(true);
           else if(['off','reset','stock','default'].includes(arg))select('off');
           else if(['random','shuffle'].includes(arg)){const pool=themes.filter(t=>t.id!==prefs.theme);select(pool[Math.floor(Math.random()*pool.length)].id);}
           else{const found=themes.find(t=>t.id===arg||t.name.toLowerCase()===arg||t.name.toLowerCase().includes(arg));if(found)select(found.id);else toggle(true);}

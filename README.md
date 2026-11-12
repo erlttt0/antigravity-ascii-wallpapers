@@ -55,8 +55,6 @@ Versions **2.29.0** and **2.28.2** were inspected by hand. Other versions are ch
    node .\manage-wallpapers.cjs install
    ```
 
-   *(On Windows, you can also run `.\install.bat` or double-click `install.bat` to close Antigravity, patch, and relaunch it.)*
-
    *(Optional)* If Antigravity is installed in a non-standard location, pass the path directly:
    ```bash
    node manage-wallpapers.cjs install /path/to/Antigravity.app

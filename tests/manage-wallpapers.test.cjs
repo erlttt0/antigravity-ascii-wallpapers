@@ -1360,7 +1360,7 @@ async function runTrack2AsyncTests() {
     }
   }
 
-  // Test 21 (Track 3 Task 3): dynamic resolveArchive, EISDIR guard, full main() install/update/uninstall/corrupt-receipt/rollback, install.bat
+  // Test 21 (Track 3 Task 3): dynamic resolveArchive, EISDIR guard, full main() install/update/uninstall/corrupt-receipt/rollback
   {
     const buildAppTree = (baseDir, ver = '2.31.1') => {
       const resDir = path.join(baseDir, 'resources');
@@ -1526,13 +1526,6 @@ async function runTrack2AsyncTests() {
       if (savedApp === undefined) delete process.env.ANTIGRAVITY_APP_PATH; else process.env.ANTIGRAVITY_APP_PATH = savedApp;
       fs.rmSync(tmpApp, { recursive: true, force: true });
     }
-
-    // 5. install.bat hardening checks
-    const bat = fs.readFileSync(path.join(rootDir, 'install.bat'), 'utf8');
-    assert(bat.includes('node manage-wallpapers.cjs install %*'), 'install.bat must forward CLI arguments via %*');
-    assert(/taskkill\s+\/im\s+Antigravity\.exe/i.test(bat) && /taskkill\s+\/f\s+\/im\s+Antigravity\.exe/i.test(bat), 'install.bat must attempt graceful close before taskkill /f');
-    assert(/if\s+exist\s+/i.test(bat), 'install.bat must check if exist before launching Antigravity.exe');
-    assert(/%ANTIGRAVITY_APP_PATH:"=%/i.test(bat), 'install.bat must strip quotes from ANTIGRAVITY_APP_PATH before exist check');
   }
 
   // Test 22 (Track 4): Docs accuracy, CSP hardening, and corrupt multi-block ASAR rejection
@@ -1577,7 +1570,6 @@ async function runTrack2AsyncTests() {
     assert(readmeMd.includes('/quota'), 'README.md must document /quota');
     assert(/## Requirements[\s\S]*Linux[\s\S]*%ProgramFiles%[\s\S]*## Install/i.test(readmeMd), 'README.md Requirements must list Linux and %ProgramFiles%');
     assert(readmeMd.includes('ANTIGRAVITY_APP_PATH'), 'README.md must document ANTIGRAVITY_APP_PATH');
-    assert(readmeMd.includes('install.bat'), 'README.md must mention install.bat for Windows');
 
     // Corrupt multi-block integrity.blocks[0] (even with intact whole-file hash) must abort repack
     const corruptMultiBlock = buildSyntheticAsar({

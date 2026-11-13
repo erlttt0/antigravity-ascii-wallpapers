@@ -60,6 +60,17 @@ const drawAsciiScene = (() => {
     for (let b = 0; b < 4; b++) { const B = BUMPS[b], r = B[2] * (.8 + .4 * hash(k, b)), du = u - B[0], dv = v - B[1] * (.85 + .3 * hash(b, k)); if (du * du + dv * dv < r * r) return true; }
     return false;
   }
+  const NEON_SC = [0, 1, 2, 5];
+  const bhDisk = (dx, dy, rd, t, o, back) => { if (rd < .09 || rd > .34) return false; const a = Math.atan2(dy * 3.4, dx), I = (noise(a * 3 - t * .5 / rd, rd * 24) * .6 + .4) * (1 - (rd - .09) / .25) * (1.1 - .5 * dx / rd); if (I < .12) return false; o.v = Math.min(1, I * (back ? .7 : 1.2)); o.c = I > .75 ? 0 : I > .5 ? 1 : I > .3 ? 2 : 3; if (I > .85 && !back) o.t = 1; return true; };
+  const radarWave = (x, q) => .5 + .13 * Math.sin(x * 16 - q * 3) * Math.sin(x * 2.4 + q * .7);
+  const SATURN_MOONS = [[.48, .06, 0, .016], [.6, .04, 2, .012], [.72, .025, 4, .02]];
+  const REEF_CORALS = [[.06, .3, .07, 1], [.18, .18, .06, 2], [.3, .12, .05, 3], [-.07, .34, .08, 3], [-.2, .2, .06, 1], [-.32, .14, .05, 2]];
+  const OASIS_PALMS = [[.06, .84, .34, .25, 0], [.3, .83, .26, -.3, 1], [.18, .8, .2, .15, 2]];
+  const WINDMILL_TOWERS = [[.17, .74, .28, .5], [-.15, .72, .22, -.4], [-.34, .7, .12, .6]];
+  const TULIP_BANDS = [4, 7, 5, 8, 6, 7];
+  const ISLAND_PALMS_L = [[-.06, .3, .25, 0], [.06, .22, -.3, 1]];
+  const ISLAND_PALMS_R = [[0, .22, -.2, 2]];
+  const ZEN_STONES = [[.16, .32, .1], [.32, .74, .07], [-.17, .52, .12], [-.33, .2, .06], [.07, .86, .05]];
   // Per-frame particle positions, filled by each scene's pre() so cells only compare numbers.
   const PX = new Float64Array(64), PY = new Float64Array(64), PZ = new Float64Array(64);
 
@@ -77,21 +88,32 @@ const drawAsciiScene = (() => {
     }
     return false;
   }
-  function branch(x, y, t, A, o, right) {
-    const s = right ? A - x : x, span = right ? .85 : .55; if (s < -.04 || s > span + .06) return false;
-    const by = b => .02 + (right ? .3 : .22) * Math.pow(Math.max(0, b) / span, 1.5), sway = .006 * Math.sin(t * .6 + s * 3);
-    // Individual five-petal flowers clustered along the branch, each with a deep pink centre.
+  const branchY = (b, span, right) => .02 + (right ? .3 : .22) * Math.pow(Math.max(0, b) / span, 1.5);
+  const buildBranchFlowers = right => {
+    const span = right ? .85 : .55, out = [];
     for (let k = 0; k < 26; k++) {
       const bs = span * (.04 + .037 * k); if (bs > span) break;
       const seed = k + (right ? 0 : 40), r = .026 + .016 * hash(seed, 9);
-      const ds = s - bs - (hash(seed, 8) - .5) * .05, dy = y - by(bs) - (hash(seed, 7) - .5) * .11 - sway, d = Math.hypot(ds, dy);
+      out.push([bs + (hash(seed, 8) - .5) * .05, branchY(bs, span, right) + (hash(seed, 7) - .5) * .11, r, seed, k]);
+    }
+    return out;
+  };
+  const BRANCH_FLOWERS_R = buildBranchFlowers(true), BRANCH_FLOWERS_L = buildBranchFlowers(false);
+  function branch(x, y, t, A, o, right) {
+    const s = right ? A - x : x, span = right ? .85 : .55; if (s < -.04 || s > span + .06 || y > (right ? .44 : .36)) return false;
+    const sway = .006 * Math.sin(t * .6 + s * 3), flowers = right ? BRANCH_FLOWERS_R : BRANCH_FLOWERS_L;
+    // Individual five-petal flowers clustered along the branch, each with a deep pink centre.
+    for (let k = 0; k < flowers.length; k++) {
+      const fl = flowers[k], r = fl[2], ds = s - fl[0], dy = y - fl[1] - sway;
+      if (ds > r || ds < -r || dy > r || dy < -r) continue;
+      const d = Math.hypot(ds, dy);
       if (d > r) continue;
-      const a = Math.atan2(dy, ds) + seed + Math.sin(t * .4 + k) * .2, petal = r * (.62 + .38 * Math.abs(Math.cos(a * 2.5)));
+      const a = Math.atan2(dy, ds) + fl[3] + Math.sin(t * .4 + fl[4]) * .2, petal = r * (.62 + .38 * Math.abs(Math.cos(a * 2.5)));
       if (d < petal) { o.t = 1; o.c = d < r * .24 ? 2 : d > petal * .75 ? 1 : 0; return true; }
     }
-    if (s >= 0 && s <= span && Math.abs(y - by(s) - sway) < .02 * (1 - s / span) + .005) { o.t = 1; o.c = 3; return true; }
+    if (s >= 0 && s <= span && Math.abs(y - branchY(s, span, right) - sway) < .02 * (1 - s / span) + .005) { o.t = 1; o.c = 3; return true; }
     // A twig off the main branch
-    if (s > span * .3 && s < span * .62) { const q = (s - span * .3) / (span * .32); if (Math.abs(y - by(span * .3) - q * .12 - sway) < .008 + .006 * (1 - q)) { o.t = 1; o.c = 3; return true; } }
+    if (s > span * .3 && s < span * .62) { const q = (s - span * .3) / (span * .32); if (Math.abs(y - branchY(span * .3, span, right) - q * .12 - sway) < .008 + .006 * (1 - q)) { o.t = 1; o.c = 3; return true; } }
     return false;
   }
 
@@ -678,10 +700,10 @@ const drawAsciiScene = (() => {
     neon: { pal: ['#ff3fbf', '#3ff0ff', '#ffe14a', '#0a0714', '#150d24', '#9a5cff', '#ffffff', '#ff5a3a', '#1a1230'], ink: '#05030a',
       bg(g, w, h) { grad(g, w, h, [[0, '#05030c'], [.45, '#1a0c2c'], [.46, '#0a0614'], [1, '#120a20']]); },
       f(x, y, t, A, o, i, j) {
-        const vx = A / 2, vy = .45, ax = x - vx, ay = y - vy, hw = .06 + Math.abs(ay) * 1.4, SC = [0, 1, 2, 5];
+        const vx = A / 2, vy = .45, ax = x - vx, ay = y - vy, hw = .06 + Math.abs(ay) * 1.4;
         if (Math.abs(ax) > hw) {
           // A wall seen in one-point perspective: u is depth toward the vanishing point, hgt is height on the wall.
-          const u = 1 / Math.abs(ax), hgt = ay / Math.abs(ax), side = ax < 0 ? 0 : 1, k = Math.floor(u * 1.2 + side * .5), f = wrap(u * 1.2 + side * .5, 1), col = SC[Math.floor(hash(k, side + 7) * 4)];
+          const u = 1 / Math.abs(ax), hgt = ay / Math.abs(ax), side = ax < 0 ? 0 : 1, k = Math.floor(u * 1.2 + side * .5), f = wrap(u * 1.2 + side * .5, 1), col = NEON_SC[Math.floor(hash(k, side + 7) * 4)];
           if (hgt > -.55 && hgt < -.12 && f > .25 && f < .55 && hash(k, side + 3) > .25) { const on = Math.sin(t * (3 + 5 * hash(k, side)) + k) > -.85; o.t = 1; o.c = on ? col : 4; if (on && Math.abs(hgt + .335) < .06 && hash(Math.floor(f * 30), k) > .5) o.c = 6; return; }
           if (hgt > -.6 && hgt < -.07 && f > .2 && f < .6 && hash(k, side + 3) > .25) { o.v = .4; o.c = col; return; }
           o.t = 1; o.c = (Math.floor(u * 4) + side) % 2 ? 3 : 4;
@@ -691,7 +713,7 @@ const drawAsciiScene = (() => {
         if (ay > 0) {
           // Wet asphalt: each sign smears into a vertical streak of reflection near the wall it hangs on.
           const k = Math.floor(1 / hw * 1.2), side = ax < 0 ? 0 : 1;
-          if (Math.abs(Math.abs(ax) - hw) < hw * .45 && hash(i, j + Math.floor(t * 3)) > .5) { o.v = .25 + .25 * Math.sin(t * 2 + i); o.c = SC[Math.floor(hash(k, side + 7) * 4)]; o.g = 16; return; }
+          if (Math.abs(Math.abs(ax) - hw) < hw * .45 && hash(i, j + Math.floor(t * 3)) > .5) { o.v = .25 + .25 * Math.sin(t * 2 + i); o.c = NEON_SC[Math.floor(hash(k, side + 7) * 4)]; o.g = 16; return; }
           if (Math.abs(ax) < .006 + ay * .02 && wrap(.3 / (ay + .02) - t * .5, 1) < .4) { o.v = .5; o.c = 2; o.g = 16; return; }
           if (noise(x * 20, y * 6 - t * .4) > .72) { o.v = .25; o.c = 6; o.g = 2; return; }
           o.t = 1; o.c = 8; return;
@@ -703,11 +725,10 @@ const drawAsciiScene = (() => {
       bg(g, w, h) { grad(g, w, h, [[0, '#04020a'], [1, '#0a0614']]); glow(g, w - h * .5, h * .48, h * .8, '#ffb04a22'); },
       f(x, y, t, A, o, i, j) {
         const dx = (x - (A - .5)) / 2.2, dy = (y - .48) / 2.2, d = Math.hypot(dx, dy), rd = Math.hypot(dx, dy * 3.4);
-        const disk = (back) => { if (rd < .09 || rd > .34) return false; const a = Math.atan2(dy * 3.4, dx), I = (noise(a * 3 - t * .5 / rd, rd * 24) * .6 + .4) * (1 - (rd - .09) / .25) * (1.1 - .5 * dx / rd); if (I < .12) return false; o.v = Math.min(1, I * (back ? .7 : 1.2)); o.c = I > .75 ? 0 : I > .5 ? 1 : I > .3 ? 2 : 3; if (I > .85 && !back) o.t = 1; return true; };
-        if (dy > 0 && disk(false)) return;
+        if (dy > 0 && bhDisk(dx, dy, rd, t, o, false)) return;
         if (d < .075) { o.t = 1; o.c = 4; return; }
         if (d < .09) { o.v = .9; o.c = 6; return; }
-        if (dy <= 0 && disk(true)) return;
+        if (dy <= 0 && bhDisk(dx, dy, rd, t, o, true)) return;
         // The far side of the disk, bent up over the shadow by the hole's gravity.
         if (dy < .02 && d > .09 && d < .14) { const I = (1 - (d - .09) / .05) * (.6 + .4 * noise(Math.atan2(dy, dx) * 5 + t * .4, 3)); if (I > .2) { o.v = I * .8; o.c = I > .5 ? 1 : 2; return; } }
         if (d > .2) stars(o, i, j, t, 5, y, 1.1);
@@ -720,7 +741,7 @@ const drawAsciiScene = (() => {
         for (let k = 0; k < 24; k++) if (PY[k] < peak + .02 && Math.abs(x - PX[k]) < o.cw * .5 && Math.abs(y - PY[k]) < o.ch * .5) { o.g = 6; o.c = PZ[k] < .5 ? 8 : 1; o.v = 1 - PZ[k] * .6; return; }
         const dx = x - cx, hw = (y - peak) / .53 * .34 + .035;
         if (y > peak && Math.abs(dx) < hw) {
-          for (const s of [-1, 1]) { const px = cx + s * (y - peak) * .32 + .015 * Math.sin(y * 22 + s); if (Math.abs(x - px) < .008 + (y - peak) * .015) { const fl = .55 + .45 * Math.sin(y * 45 - t * 2.5); o.t = fl > .5 ? 1 : 0; o.c = fl > .85 ? 0 : fl > .5 ? 1 : 2; o.v = fl; return; } }
+          for (let s = -1; s <= 1; s += 2) { const px = cx + s * (y - peak) * .32 + .015 * Math.sin(y * 22 + s); if (Math.abs(x - px) < .008 + (y - peak) * .015) { const fl = .55 + .45 * Math.sin(y * 45 - t * 2.5); o.t = fl > .5 ? 1 : 0; o.c = fl > .85 ? 0 : fl > .5 ? 1 : 2; o.v = fl; return; } }
           if (y < peak + .02) { o.t = 1; o.c = 1; return; }
           o.t = 1; o.c = dx < -hw * .2 ? 5 : 4; return;
         }
@@ -767,9 +788,8 @@ const drawAsciiScene = (() => {
         // Oscilloscope on the left, with a phosphor ghost of the previous trace.
         const L = .04, R = A * .32, inX = x > L && x < R, inY = y > .25 && y < .75;
         if (inX && inY) {
-          const wy = q => .5 + .13 * Math.sin(x * 16 - q * 3) * Math.sin(x * 2.4 + q * .7);
-          if (Math.abs(y - wy(t)) < o.ch * .6) { o.t = 1; o.c = 0; return; }
-          if (Math.abs(y - wy(t - .12)) < o.ch * .6) { o.v = .55; o.c = 2; return; }
+          if (Math.abs(y - radarWave(x, t)) < o.ch * .6) { o.t = 1; o.c = 0; return; }
+          if (Math.abs(y - radarWave(x, t - .12)) < o.ch * .6) { o.v = .55; o.c = 2; return; }
           if (wrap(x - L, .08) < o.cw * .5 || wrap(y - .25, .05) < o.ch * .5) { o.v = .3 * scan; o.c = 3; o.g = 1; }
           return;
         }
@@ -791,7 +811,7 @@ const drawAsciiScene = (() => {
           if (!spot && o.c < 3 && Math.sin(dy / r * 18 + noise(x * 6, y * 30) * 2) > .85) o.c++;
           return;
         }
-        for (const [R, sp, ph, s] of [[.48, .06, 0, .016], [.6, .04, 2, .012], [.72, .025, 4, .02]]) { const a = t * sp + ph, mx = cx + R * Math.cos(a), my = cy - R * .2 * Math.cos(a) + R * .25 * Math.sin(a); if (Math.sin(a) < 0 && Math.hypot(mx - cx, my - cy) < r) continue; if (Math.hypot(x - mx, y - my) < s) { o.t = 1; o.c = x < mx ? 1 : 3; return; } }
+        for (let m = 0; m < SATURN_MOONS.length; m++) { const M = SATURN_MOONS[m], a = t * M[1] + M[2], mx = cx + M[0] * Math.cos(a), my = cy - M[0] * .2 * Math.cos(a) + M[0] * .25 * Math.sin(a); if (Math.sin(a) < 0 && Math.hypot(mx - cx, my - cy) < r) continue; if (Math.hypot(x - mx, y - my) < M[3]) { o.t = 1; o.c = x < mx ? 1 : 3; return; } }
         stars(o, i, j, t, 7, y, 1.1);
       } },
     kelp: { pal: ['#eef6ff', '#9ab8d4', '#d4a83c', '#8a661c', '#f0cc64', '#0a2440', '#14385a', '#c4e2ff', '#4e6c8c'], ink: '#030c18',
@@ -837,12 +857,17 @@ const drawAsciiScene = (() => {
       bg(g, w, h) { grad(g, w, h, [[0, '#0f3c8c'], [1, '#0a2c6c']]); },
       f(x, y, t, A, o, i, j) {
         for (let n = 0; n < GEARS.length; n++) {
-          const G = GEARS[n], cx = G[0] < 0 ? A + G[0] : G[0], dx = x - cx, dy = y - G[1], r = Math.hypot(dx, dy), R = G[2], a = Math.atan2(dy, dx) - t * G[4], p = wrap(a * G[3] / 6.283, 1);
-          if (r < R + .035) {
-            // Outline of the teeth (rim plus flanks), the inner rim, five spokes and the bore.
-            if ((p < .5 ? Math.abs(r - R - .022) : Math.abs(r - R)) < .004 || ((p < .04 || Math.abs(p - .5) < .04) && r > R && r < R + .022)) { o.t = 1; o.c = 0; return; }
-            if (Math.abs(r - R * .78) < .004 || Math.abs(r - R * .25) < .004 || Math.abs(r - R * .1) < .004) { o.v = .9; o.c = 1; return; }
-            if (r > R * .25 && r < R * .78) for (let s = 0; s < 5; s++) if (Math.abs(Math.sin(a - s * 1.2566)) * r < .005 && Math.cos(a - s * 1.2566) > 0) { o.v = .9; o.c = 1; return; }
+          const G = GEARS[n], cx = G[0] < 0 ? A + G[0] : G[0], dx = x - cx, dy = y - G[1], R = G[2];
+          if (Math.abs(dx) >= R + .06 || Math.abs(dy) >= R + .06 + o.ch * .5) continue;
+          if (Math.abs(dx) < R + .035 && Math.abs(dy) < R + .035) {
+            const r = Math.hypot(dx, dy);
+            if (r < R + .035) {
+              const a = Math.atan2(dy, dx) - t * G[4], p = wrap(a * G[3] / 6.283, 1);
+              // Outline of the teeth (rim plus flanks), the inner rim, five spokes and the bore.
+              if ((p < .5 ? Math.abs(r - R - .022) : Math.abs(r - R)) < .004 || ((p < .04 || Math.abs(p - .5) < .04) && r > R && r < R + .022)) { o.t = 1; o.c = 0; return; }
+              if (Math.abs(r - R * .78) < .004 || Math.abs(r - R * .25) < .004 || Math.abs(r - R * .1) < .004) { o.v = .9; o.c = 1; return; }
+              if (r > R * .25 && r < R * .78) for (let s = 0; s < 5; s++) if (Math.abs(Math.sin(a - s * 1.2566)) * r < .005 && Math.cos(a - s * 1.2566) > 0) { o.v = .9; o.c = 1; return; }
+            }
           }
           // Dashed centre lines and, on the big gears, a yellow dimension line.
           if ((Math.abs(dy) < o.ch * .3 && Math.abs(dx) < R + .06 || Math.abs(dx) < o.cw * .3 && Math.abs(dy) < R + .06) && wrap(dx + dy, .03) < .018) { o.v = .5; o.c = 3; o.g = Math.abs(dy) < o.ch * .3 ? 3 : 16; return; }
@@ -854,8 +879,8 @@ const drawAsciiScene = (() => {
     stainedglass: { pal: ['#141016', '#d8283a', '#2a54d0', '#f0b02a', '#249a58', '#8a34b0', '#4ac4e0', '#fff4d0', '#3a302c', '#5a4c44'], ink: '#0a0806', inkA: .35,
       bg(g, w, h) { grad(g, w, h, [[0, '#1e1814'], [1, '#2a221c']]); },
       f(x, y, t, A, o, i, j) {
-        for (const cxF of [.17, -.17]) {
-          const w = .13, cx = cxF < 0 ? A + cxF : cxF, dx = x - cx, archY = .14 + w;
+        for (let side = 0; side < 2; side++) {
+          const cxF = side ? -.17 : .17, w = .13, cx = cxF < 0 ? A + cxF : cxF, dx = x - cx, archY = .14 + w;
           const inside = Math.abs(dx) < w && y < .78 && (y > archY || Math.hypot(dx, y - archY) < w);
           if (inside) {
             const edge = voronoi(x, y, .06); if (edge < .005 || Math.abs(dx) < .004 || Math.abs(y - archY - .2) < .004) { o.t = 1; o.c = 0; return; }
@@ -927,9 +952,9 @@ const drawAsciiScene = (() => {
       pre(t, A) { for (let k = 0; k < 12; k++) { const dir = k % 2 ? 1 : -1; PX[k] = wrap(dir * t * (.03 + .03 * hash(k, 1)) + hash(k, 2) * 3, A + .3) - .15; PY[k] = .2 + .55 * hash(k, 3) + .015 * Math.sin(t + k); PZ[k] = dir; } },
       f(x, y, t, A, o, i, j) {
         for (let k = 0; k < 12; k++) { const dx = (x - PX[k]) * PZ[k], dy = y - PY[k]; if (Math.abs(dy) < .014 && dx > -.04 && dx < .025) { if (dx > -.012 && (dx / .025) ** 2 + (dy / .012) ** 2 < 1) { o.t = 1; o.c = k % 3 ? 4 : 5; return; } if (dx <= -.012 && Math.abs(dy) < (-.012 - dx) * .5) { o.t = 1; o.c = k % 3 ? 2 : 5; return; } } }
-        for (const [cx, h, w, c] of [[.06, .3, .07, 1], [.18, .18, .06, 2], [.3, .12, .05, 3], [-.07, .34, .08, 3], [-.2, .2, .06, 1], [-.32, .14, .05, 2]]) {
-          const X = cx < 0 ? A + cx : cx, q = (.9 - y) / h; if (q < 0 || q > 1) continue;
-          if (Math.abs(x - X) < w * (1 - q * .6) && fbm(x * 16 + cx * 9, y * 16) > .38 + q * .12) { o.t = 1; o.c = c; if (q > .85) o.c = 0; return; }
+        for (let c = 0; c < REEF_CORALS.length; c++) {
+          const rc = REEF_CORALS[c], cx = rc[0], X = cx < 0 ? A + cx : cx, q = (.9 - y) / rc[1]; if (q < 0 || q > 1) continue;
+          if (Math.abs(x - X) < rc[2] * (1 - q * .6) && fbm(x * 16 + cx * 9, y * 16) > .38 + q * .12) { o.t = 1; o.c = rc[3]; if (q > .85) o.c = 0; return; }
         }
         if (y > .88 + .01 * Math.sin(x * 5)) { o.t = 1; o.c = Math.sin(x * 40 + y * 120) > .6 ? 7 : 6; return; }
         const q = Math.abs(noise(x * 5 + t * .15, y * 5) - noise(x * 5 + 4, y * 5 - t * .12)); if (q < .035) { o.v = .45; o.c = 0; o.g = 14; return; }
@@ -981,7 +1006,7 @@ const drawAsciiScene = (() => {
       bg(g, w, h) { grad(g, w, h, [[0, '#f6d8a0'], [.5, '#fff0d4'], [1, '#f0d8a0']]); glow(g, w - h * .3, h * .2, h * .35, '#fffbe8d0'); },
       f(x, y, t, A, o, i, j) {
         if (y > .55 && y < .72) x += .004 * Math.sin(y * 90 + t * 4);
-        for (const [px, b, h, l, k] of [[.06, .84, .34, .25, 0], [.3, .83, .26, -.3, 1], [.18, .8, .2, .15, 2]]) { const p = palm(x, y, px, b, h, l, t, k); if (p) { o.t = 1; o.c = p === 1 ? 6 : p === 2 ? 4 : 5; return; } }
+        for (let q = 0; q < OASIS_PALMS.length; q++) { const P = OASIS_PALMS[q], p = palm(x, y, P[0], P[1], P[2], P[3], t, P[4]); if (p) { o.t = 1; o.c = p === 1 ? 6 : p === 2 ? 4 : 5; return; } }
         if ((x - A * .18) ** 2 / .05 + (y - .85) ** 2 / .0012 < 1) { o.t = 1; o.c = Math.sin(x * 50 + t * 1.5) > .5 ? 8 : 7; return; }
         // A small caravan walking the far ridge
         for (let k = 0; k < 3; k++) { const cx = wrap(A - .1 - t * .006 - k * .07, A + .4) - .2, cy = .66, dx = x - cx, dy = y - cy; if ((dx / .022) ** 2 + (dy / .01) ** 2 < 1 || (Math.abs(dx) < .008 && dy < -.004 && dy > -.017) || (Math.abs(dx + .026) < .005 && dy < 0 && dy > -.022) || (Math.abs(dy - .016) < .008 && (Math.abs(dx - .012 + .004 * Math.sin(t * 3 + k)) < .003 || Math.abs(dx + .012 - .004 * Math.sin(t * 3 + k)) < .003))) { o.t = 1; o.c = 9; return; } }
@@ -1007,13 +1032,13 @@ const drawAsciiScene = (() => {
     windmills: { pal: ['#f6f6f4', '#ece4d4', '#c8b8a0', '#a85a3a', '#ff5a6a', '#ffd04a', '#ff8ad0', '#6ab04a', '#4a8a3a', '#8ab8e0'], ink: '#6a5a4a', inkA: .3,
       bg(g, w, h) { grad(g, w, h, [[0, '#aeb4bf'], [.55, '#d9dce2'], [1, '#eeede6']]); },
       f(x, y, t, A, o, i, j) {
-        for (const [px, base, h, sp] of [[.17, .74, .28, .5], [-.15, .72, .22, -.4], [-.34, .7, .12, .6]]) {
-          const cx = px < 0 ? A + px : px, top = base - h, dx = x - cx, hub = top - .015;
-          if (onBlade(dx, (y - hub) * 1, t * sp, 4, h * .75, .018)) { const r = Math.hypot(dx, y - hub); o.t = wrap(r * 45, 1) > .35 ? 1 : 0; o.c = 0; o.v = .9; o.g = 4; return; }
-          if (y > top && y < base) { const w = h * (.12 + .1 * (y - top) / h); if (Math.abs(dx) < w) { o.t = 1; o.c = dx > w * .4 ? 2 : 1; if (Math.abs(dx) < w * .25 && y > base - h * .2) o.c = 3; return; } }
+        for (let w = 0; w < WINDMILL_TOWERS.length; w++) {
+          const W = WINDMILL_TOWERS[w], px = W[0], base = W[1], h = W[2], cx = px < 0 ? A + px : px, top = base - h, dx = x - cx, hub = top - .015;
+          if (onBlade(dx, y - hub, t * W[3], 4, h * .75, .018)) { const r = Math.hypot(dx, y - hub); o.t = wrap(r * 45, 1) > .35 ? 1 : 0; o.c = 0; o.v = .9; o.g = 4; return; }
+          if (y > top && y < base) { const wd = h * (.12 + .1 * (y - top) / h); if (Math.abs(dx) < wd) { o.t = 1; o.c = dx > wd * .4 ? 2 : 1; if (Math.abs(dx) < wd * .25 && y > base - h * .2) o.c = 3; return; } }
           if (y > top - h * .1 && y <= top && Math.abs(dx) < h * .14 - (top - y) * 1.2) { o.t = 1; o.c = 3; return; }
         }
-        if (y > .74) { const z = (y - .74) / .26, row = Math.floor(1 / (z + .1) * 2); if (Math.abs(y - .82 - .01 * Math.sin(x * 4)) < .008) { o.t = 1; o.c = 9; return; } o.t = 1; o.c = [4, 7, 5, 8, 6, 7][row % 6]; if (o.c !== 7 && o.c !== 8 && hash(i, j) > .7) { o.t = 0; o.g = 15; o.v = 1; } return; }
+        if (y > .74) { const z = (y - .74) / .26, row = Math.floor(1 / (z + .1) * 2); if (Math.abs(y - .82 - .01 * Math.sin(x * 4)) < .008) { o.t = 1; o.c = 9; return; } o.t = 1; o.c = TULIP_BANDS[row % 6]; if (o.c !== 7 && o.c !== 8 && hash(i, j) > .7) { o.t = 0; o.g = 15; o.v = 1; } return; }
         if (y > .7 - .03 * Math.sin(x * 1.8)) { o.t = 1; o.c = 8; return; }
         for (let k = 0; k < 4; k++) { const s = .06 + .03 * hash(k, 3), cx = wrap(hash(k, 1) * A + t * .012, A + .4) - .2, cy = .1 + .3 * hash(k, 2); if (cumulus((x - cx) / s, (y - cy) / s, k + 3)) { o.t = 1; o.c = 0; return; } }
       } },
@@ -1022,8 +1047,9 @@ const drawAsciiScene = (() => {
       pre(t, A) { for (let k = 0; k < 5; k++) { PX[k] = wrap(hash(k, 1) * A + t * (.02 + .02 * hash(k, 2)), A + .2) - .1; PY[k] = .15 + .25 * hash(k, 3) + .02 * Math.sin(t + k); PZ[k] = Math.sin(t * 5 + k * 2) > 0 ? 12 : 13; } },
       f(x, y, t, A, o, i, j) {
         for (let k = 0; k < 5; k++) if (Math.abs(x - PX[k]) < o.cw * .6 && Math.abs(y - PY[k]) < o.ch * .5) { o.g = PZ[k]; o.c = 8; o.v = 1; return; }
-        for (const [cx, cy, rx] of [[A * .16, .66, .22], [A - .14, .63, .12]]) {
-          for (const [px, h, l, k] of cx < A / 2 ? [[cx - .06, .3, .25, 0], [cx + .06, .22, -.3, 1]] : [[cx, .22, -.2, 2]]) { const p = palm(x, y, px, cy - .01, h, l, t, k); if (p) { o.t = 1; o.c = p === 1 ? 6 : p === 2 ? 4 : 5; return; } }
+        for (let isl = 0; isl < 2; isl++) {
+          const cx = isl ? A - .14 : A * .16, cy = isl ? .63 : .66, rx = isl ? .12 : .22, palms = cx < A / 2 ? ISLAND_PALMS_L : ISLAND_PALMS_R;
+          for (let q = 0; q < palms.length; q++) { const P = palms[q], p = palm(x, y, cx + P[0], cy - .01, P[1], P[2], t, P[3]); if (p) { o.t = 1; o.c = p === 1 ? 6 : p === 2 ? 4 : 5; return; } }
           const u = (x - cx) / rx, v = (y - cy) / .04; if (u * u + v * v < 1 && v > -1) { o.t = 1; o.c = 3; return; }
           if (u * u + v * v < 1.6 && y > cy) { o.v = .6 + .3 * Math.sin(t * 2 + x * 30); o.c = 0; o.g = 14; return; }
         }
@@ -1046,8 +1072,8 @@ const drawAsciiScene = (() => {
       f(x, y, t, A, o, i, j) {
         for (let k = 0; k < 12; k++) if (Math.abs(x - PX[k]) < o.cw * .55 && Math.abs(y - PY[k]) < o.ch * .5) { o.g = [20, 21, 17, 18][PZ[k]]; o.c = 6; o.v = 1; return; }
         let dmin = 9;
-        for (const [cx, cy, r] of [[.16, .32, .1], [.32, .74, .07], [-.17, .52, .12], [-.33, .2, .06], [.07, .86, .05]]) {
-          const X = cx < 0 ? A + cx : cx, d = Math.hypot(x - X, (y - cy) * 1.4) - r;
+        for (let z = 0; z < ZEN_STONES.length; z++) {
+          const S = ZEN_STONES[z], cx = S[0], cy = S[1], r = S[2], X = cx < 0 ? A + cx : cx, d = Math.hypot(x - X, (y - cy) * 1.4) - r;
           if (d < 0) { o.t = 1; o.c = fbm(x * 14, y * 14) > .55 + (y - cy) * 4 ? (noise(x * 30, y * 30) > .5 ? 5 : 4) : (x - X > r * .2 ? 3 : 2); return; }
           dmin = Math.min(dmin, d);
         }
@@ -1057,9 +1083,12 @@ const drawAsciiScene = (() => {
       } }
   };
 
-  const cache = new WeakMap(), atlases = new Map(), o = { v: 0, c: 0, t: 0, g: -1, cw: 0, ch: 0, e: 0, p: 0 }, ALPHA = [.45, .65, .85, 1], DIM = [.22, .5, .66, 1], TG = [2, 2, 7, 7, 9, 10, 1, 8];
+  const cache = new WeakMap(), atlases = new Map(), MAX_ATLASES = 32, o = { v: 0, c: 0, t: 0, g: -1, cw: 0, ch: 0, e: 0, p: 0 }, ALPHA = [.45, .65, .85, 1], DIM = [.22, .5, .66, 1], TG = [2, 2, 7, 7, 9, 10, 1, 8];
   function atlasFor(id, sc, theme, aw, ah, glyphs = 'ascii') {
-    const ch = GLYPHS[glyphs] || CH, key = id + '|' + glyphs + '|' + aw + '|' + ah; let a = atlases.get(key); if (a) return a;
+    const ch = GLYPHS[glyphs] || CH, key = id + '|' + glyphs + '|' + aw + '|' + ah;
+    let a = atlases.get(key);
+    if (a) { atlases.delete(key); atlases.set(key, a); return a; }
+    if (atlases.size >= MAX_ATLASES) atlases.delete(atlases.keys().next().value);
     a = document.createElement('canvas'); a.width = ch.length * aw; a.height = (sc.pal.length + 1) * ah;
     const g = a.getContext('2d'); g.font = `${Math.max(4, Math.round(ah * .74))}px "SF Mono", Menlo, Monaco, Consolas, "Cascadia Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
     [...sc.pal, sc.ink || theme.glyph].forEach((color, r) => { g.fillStyle = color; for (let c = 1; c < ch.length; c++) g.fillText(ch[c], c * aw + aw / 2, r * ah + ah * .54); });
@@ -1092,68 +1121,72 @@ const drawAsciiScene = (() => {
     let st = cache.get(ctx); if (!st) { st = {}; cache.set(ctx, st); }
     const key = width + '|' + height + '|' + theme.id + '|' + k + '|' + glyphs + '|' + base;
     if (st.key !== key) {
-      st.key = key; st.bg = background(width, height, theme, sc, k, cw, ch); st.K = new Int32Array(n).fill(-1); st.V = new Float32Array(n); st.C = new Uint8Array(n); st.T = new Uint8Array(n); st.G = new Int8Array(n);
-      st.layer = document.createElement('canvas'); st.layer.width = cols * aw; st.layer.height = rows * ah; st.lg = st.layer.getContext('2d'); st.atlas = atlasFor(theme.id, sc, theme, aw, ah, glyphs);
+      st.key = key; st.frameKey = ''; st.bg = background(width, height, theme, sc, k, cw, ch); st.K = new Int32Array(n).fill(-1); st.V = new Float32Array(n); st.C = new Uint8Array(n); st.T = new Uint8Array(n); st.G = new Int8Array(n);
+      st.layer = st.layer || document.createElement('canvas'); st.layer.width = cols * aw; st.layer.height = rows * ah; st.lg = st.layer.getContext('2d'); st.atlas = atlasFor(theme.id, sc, theme, aw, ah, glyphs);
     }
-    const K = st.K, lg = st.lg, atlas = st.atlas, pal = sc.pal, inkRow = pal.length, phase = Math.floor(seconds * 2.2);
-    o.cw = cw / height; o.ch = ch / height; o.e = fx?.energy || 0; o.p = fx?.pulse || 0; sc.pre?.(seconds, A, o);
-    const cl = calm ? calm.l / height : -1, cr = calm ? calm.r / height : -1;
-    const topH = calm?.t != null ? (calm.t / height) : (height > 220 ? 38 / height : 0);
-    const glowUp = 1 + .35 * (fx?.energy || 0), fp = fx?.pulse || 0, rx = calm ? (cl + cr) / 2 : half, ry = .92;
-    const rr = (1 - fp * fp) * Math.hypot(Math.max(rx, A - rx), ry) * 1.05, band = .07, amp = .45 + .75 * fp;
-    const V = st.V, C = st.C, T = st.T, G = st.G;
-    // Pass 1: ask the scene for every cell, so pass 2 can compare neighbours.
-    for (let j = 0, p = 0; j < rows; j++) {
-      const y = (j + .5) * ch / height;
-      for (let i = 0; i < cols; i++, p++) {
-        const x = (i + .5) * cw / height;
-        o.v = 0; o.c = 0; o.t = 0; o.g = -1; sc.f(x, y, seconds, A, o, i, j);
-        // Finish ripple: a bright ring with a fainter echo behind it, drawn over everything except solid subjects.
-        if (fp > 0 && !o.t) {
-          const d = Math.hypot(x - rx, y - ry), q = Math.max(1 - Math.abs(d - rr) / band, .55 * (1 - Math.abs(d - rr * .72) / band));
-          if (q > 0) { const rv = q * amp; if (rv > o.v) { if (o.v < .06) o.c = 0; o.v = rv; o.g = -1; } }
-        }
-        V[p] = o.v; C[p] = o.c; T[p] = o.t ? 1 : 0; G[p] = o.g;
-      }
-    }
-    // What a cell shows, for outline purposes: a solid colour, a bright glyph colour, or nothing.
-    const cls = q => T[q] ? C[q] : V[q] * glowUp > .3 ? 32 + C[q] : -1;
-    // Pass 2: outside the chat column draw normally; behind it the scene becomes a line sketch of the same shapes.
-    for (let j = 0, p = 0; j < rows; j++) {
-      const y = (j + .5) * ch / height;
-      const ey = topH > 0 ? sm(0, .035, y - topH) : 1;
-      for (let i = 0; i < cols; i++, p++) {
-        const x = (i + .5) * cw / height;
-        const ex = cl < 0 ? sm(A * .17, A * .33, Math.abs(x - half)) : sm(-.01, .1, Math.max(cl - x, x - cr));
-        // Dithered handover, so the picture breaks up into the sketch rather than ending at a line.
-        const sketch = ex < 1 && hash(i * 7 + 3, j * 11 + 5) >= ex;
-        let tile = T[p], c = C[p], g = 0, b = 3, dl = 3;
-        if (sketch) {
-          tile = 0; const me = cls(p);
-          if (me >= 0) {
-            const up = j > 0 && cls(p - cols) !== me, dn = j < rows - 1 && cls(p + cols) !== me, lf = i > 0 && cls(p - 1) !== me, rt = i < cols - 1 && cls(p + 1) !== me;
-            c = me & 31;
-            const sides = up + dn + lf + rt;
-            // Cells exposed on three or four sides are specks too small to outline: keep them as a dot.
-            if (sides > 2) { g = 1; dl = 1; }
-            else if (sides) { g = (up && lf) || (dn && rt) ? 17 : (up && rt) || (dn && lf) ? 18 : up || dn ? 3 : 16; dl = 1; }
-            // Insides of solid shapes get a sparse stipple so fills still read.
-            else if (me < 32 && (i + 2 * j) % 4 === 0) { g = 1; b = 2; dl = 0; }
+    const frameKey = seconds + '|' + (calm ? calm.l + ',' + calm.r + ',' + (calm.t ?? '') : '') + '|' + (fx?.energy || 0) + '|' + (fx?.pulse || 0);
+    if (st.frameKey !== frameKey) {
+      st.frameKey = frameKey;
+      const K = st.K, lg = st.lg, atlas = st.atlas, pal = sc.pal, inkRow = pal.length, phase = Math.floor(seconds * 2.2);
+      o.cw = cw / height; o.ch = ch / height; o.e = fx?.energy || 0; o.p = fx?.pulse || 0; sc.pre?.(seconds, A, o);
+      const cl = calm ? calm.l / height : -1, cr = calm ? calm.r / height : -1;
+      const topH = calm?.t != null ? (calm.t / height) : (height > 220 ? 38 / height : 0);
+      const glowUp = 1 + .35 * (fx?.energy || 0), fp = fx?.pulse || 0, rx = cl >= 0 && cr > cl ? (cl + cr) / 2 : half, ry = .92;
+      const rr = (1 - fp * fp) * Math.hypot(Math.max(rx, A - rx), ry) * 1.05, band = .07, amp = .45 + .75 * fp;
+      const V = st.V, C = st.C, T = st.T, G = st.G;
+      // Pass 1: ask the scene for every cell, so pass 2 can compare neighbours.
+      for (let j = 0, p = 0; j < rows; j++) {
+        const y = (j + .5) * ch / height;
+        for (let i = 0; i < cols; i++, p++) {
+          const x = (i + .5) * cw / height;
+          o.v = 0; o.c = 0; o.t = 0; o.g = -1; sc.f(x, y, seconds, A, o, i, j);
+          // Finish ripple: a bright ring with a fainter echo behind it, drawn over everything except solid subjects.
+          if (fp > 0 && !o.t) {
+            const d = Math.hypot(x - rx, y - ry), q = Math.max(1 - Math.abs(d - rr) / band, .55 * (1 - Math.abs(d - rr * .72) / band));
+            if (q > 0) { const rv = q * amp; if (rv > o.v) { if (o.v < .06) o.c = 0; o.v = rv; o.g = -1; } }
           }
-          if (ey < 1 && hash(i, j * 3) > ey) g = 0;
-        } else {
-          // Solid subjects thin out into a dither where they dissolve into the titlebar.
-          if (tile && hash(i * 3 + 1, j * 5 + 2) > ey * 1.8) { tile = 0; V[p] = .5; G[p] = hash(i, j) > .45 ? 2 : 1; }
-          if (tile) g = G[p] >= 0 ? G[p] : TG[Math.floor(hash(i + (hash(i, j + phase * 31) > .88 ? phase : 0), j) * TG.length)];
-          else { const v = V[p] * glowUp * ey; g = v < .06 ? 0 : G[p] >= 0 ? (v > .12 ? G[p] : 0) : Math.min(11, 1 + Math.floor(v * 11)); b = v > .7 ? 3 : v > .45 ? 2 : v > .25 ? 1 : 0; }
+          V[p] = o.v; C[p] = o.c; T[p] = o.t ? 1 : 0; G[p] = o.g;
         }
-        if (ey <= 0) { g = 0; tile = 0; }
-        const shade = tile && ((p * 2654435761) >>> 0) % 3 === 0 ? 1 : 0;
-        const kk = g ? g | c << 5 | tile << 9 | b << 10 | shade << 12 | dl << 13 : 0;
-        if (kk === K[p]) continue; K[p] = kk;
-        const X = i * aw, Y = j * ah, D = DIM[dl]; lg.clearRect(X, Y, aw, ah); if (!g) continue;
-        if (tile) { lg.globalAlpha = shade ? .78 : .94; lg.fillStyle = pal[c]; lg.fillRect(X + gap, Y + gap, aw - gap, ah - gap); lg.globalAlpha = sc.inkA || .5; lg.drawImage(atlas, g * aw, inkRow * ah, aw, ah, X, Y, aw, ah); }
-        else { lg.globalAlpha = ALPHA[b] * D; lg.drawImage(atlas, g * aw, c * ah, aw, ah, X, Y, aw, ah); }
+      }
+      // What a cell shows, for outline purposes: a solid colour, a bright glyph colour, or nothing.
+      const cls = q => T[q] ? C[q] : V[q] * glowUp > .3 ? 32 + C[q] : -1;
+      // Pass 2: outside the chat column draw normally; behind it the scene becomes a line sketch of the same shapes.
+      for (let j = 0, p = 0; j < rows; j++) {
+        const y = (j + .5) * ch / height;
+        const ey = topH > 0 ? sm(0, .035, y - topH) : 1;
+        for (let i = 0; i < cols; i++, p++) {
+          const x = (i + .5) * cw / height;
+          const ex = cl < 0 ? sm(A * .17, A * .33, Math.abs(x - half)) : sm(-.01, .1, Math.max(cl - x, x - cr));
+          // Dithered handover, so the picture breaks up into the sketch rather than ending at a line.
+          const sketch = ex < 1 && hash(i * 7 + 3, j * 11 + 5) >= ex;
+          let tile = T[p], c = C[p], g = 0, b = 3, dl = 3;
+          if (sketch) {
+            tile = 0; const me = cls(p);
+            if (me >= 0) {
+              const up = j > 0 && cls(p - cols) !== me, dn = j < rows - 1 && cls(p + cols) !== me, lf = i > 0 && cls(p - 1) !== me, rt = i < cols - 1 && cls(p + 1) !== me;
+              c = me & 31;
+              const sides = up + dn + lf + rt;
+              // Cells exposed on three or four sides are specks too small to outline: keep them as a dot.
+              if (sides > 2) { g = 1; dl = 1; }
+              else if (sides) { g = (up && lf) || (dn && rt) ? 17 : (up && rt) || (dn && lf) ? 18 : up || dn ? 3 : 16; dl = 1; }
+              // Insides of solid shapes get a sparse stipple so fills still read.
+              else if (me < 32 && (i + 2 * j) % 4 === 0) { g = 1; b = 2; dl = 0; }
+            }
+            if (ey < 1 && hash(i, j * 3) > ey) g = 0;
+          } else {
+            // Solid subjects thin out into a dither where they dissolve into the titlebar.
+            if (tile && hash(i * 3 + 1, j * 5 + 2) > ey * 1.8) { tile = 0; V[p] = .5; G[p] = hash(i, j) > .45 ? 2 : 1; }
+            if (tile) g = G[p] >= 0 ? G[p] : TG[Math.floor(hash(i + (hash(i, j + phase * 31) > .88 ? phase : 0), j) * TG.length)];
+            else { const v = V[p] * glowUp * ey; g = v < .06 ? 0 : G[p] >= 0 ? (v > .12 ? G[p] : 0) : Math.min(11, 1 + Math.floor(v * 11)); b = v > .7 ? 3 : v > .45 ? 2 : v > .25 ? 1 : 0; }
+          }
+          if (ey <= 0) { g = 0; tile = 0; }
+          const shade = tile && ((p * 2654435761) >>> 0) % 3 === 0 ? 1 : 0;
+          const kk = g ? g | c << 5 | tile << 9 | b << 10 | shade << 12 | dl << 13 : 0;
+          if (kk === K[p]) continue; K[p] = kk;
+          const X = i * aw, Y = j * ah, D = DIM[dl]; lg.clearRect(X, Y, aw, ah); if (!g) continue;
+          if (tile) { lg.globalAlpha = shade ? .78 : .94; lg.fillStyle = pal[c]; lg.fillRect(X + gap, Y + gap, aw - gap, ah - gap); lg.globalAlpha = sc.inkA || .5; lg.drawImage(atlas, g * aw, inkRow * ah, aw, ah, X, Y, aw, ah); }
+          else { lg.globalAlpha = ALPHA[b] * D; lg.drawImage(atlas, g * aw, c * ah, aw, ah, X, Y, aw, ah); }
+        }
       }
     }
     ctx.save(); ctx.globalAlpha = 1; ctx.drawImage(st.bg, 0, 0, width, height);
